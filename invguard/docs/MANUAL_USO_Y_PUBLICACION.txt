@@ -1,0 +1,229 @@
+INVGUARD - MANUAL DE USO Y PUBLICACION
+
+1. QUE ES INVGUARD
+
+InvGuard es una aplicacion web para controlar inventario, movimientos, perdidas, reportes, reorden y usuarios.
+
+Cada persona o negocio crea su propia cuenta. Sus productos, movimientos y reportes quedan separados de los demas negocios.
+
+
+2. COMO ENTRA UN USUARIO
+
+1. Abrir la pagina publicada de InvGuard.
+2. Presionar "Crear usuario nuevo".
+3. Escribir:
+   - Nombre del negocio.
+   - Rubro.
+   - Correo.
+   - Password.
+4. Crear cuenta.
+5. Al entrar por primera vez, InvGuard crea automaticamente el negocio privado de ese usuario.
+
+
+3. ROLES DEL SISTEMA
+
+ADMIN:
+- Controla el negocio.
+- Edita datos del negocio.
+- Invita usuarios.
+- Puede administrar inventario, movimientos, perdidas y reportes.
+
+SUPERVISOR:
+- Puede revisar y operar el inventario.
+- Ideal para encargado de tienda o almacen.
+
+EMPLEADO:
+- Uso basico operativo.
+- Ideal para registrar movimientos o revisar productos.
+
+
+4. PANEL ADMIN
+
+La pantalla Admin sirve para controlar el sistema.
+
+Desde Admin puedes:
+- Ver el nombre del negocio.
+- Editar nombre, rubro y ciudad.
+- Ver tu rol.
+- Ver usuarios del negocio.
+- Crear invitaciones para nuevos usuarios.
+- Copiar el link de invitacion.
+- Enviar invitacion por WhatsApp.
+
+Importante:
+El primer usuario que crea el negocio queda como ADMIN.
+
+
+5. INVENTARIO
+
+La pantalla Inventario sirve para agregar, editar, buscar y exportar productos.
+
+Campos principales:
+- Codigo.
+- Nombre.
+- Categoria.
+- Stock.
+- Stock minimo.
+- Precio compra.
+- Precio venta.
+
+Uso recomendado:
+1. Crear categorias claras.
+2. Definir stock minimo para cada producto.
+3. Mantener precio compra y precio venta actualizados.
+4. Revisar productos con stock bajo cada dia.
+
+
+6. MOVIMIENTOS
+
+La pantalla Movimientos sirve para registrar entradas y salidas.
+
+Entrada:
+- Aumenta el stock.
+- Se usa cuando llega mercaderia.
+
+Salida:
+- Reduce el stock.
+- Se usa cuando sale mercaderia por venta, retiro o ajuste.
+
+Para registrar:
+1. Buscar producto.
+2. Seleccionar entrada o salida.
+3. Escribir cantidad.
+4. Agregar observacion si corresponde.
+5. Presionar Registrar.
+
+
+7. PERDIDAS
+
+La pantalla Perdidas sirve para registrar mermas, robos, vencimientos, roturas o ajustes.
+
+Cuando registras una perdida:
+- Se guarda en movimientos como salida.
+- Se descuenta el stock.
+- Queda historial para reportes.
+
+
+8. ANALISIS
+
+La pantalla Analisis muestra:
+- Productos con riesgo.
+- Reorden sugerido.
+- Inversion estimada para reposicion.
+- Perdidas por categoria.
+- Alertas del negocio.
+
+Sirve para tomar decisiones sin revisar todo manualmente.
+
+
+9. HERRAMIENTAS
+
+La pantalla Herramientas incluye:
+- Pedido sugerido.
+- Copiar pedido.
+- Enviar pedido por WhatsApp.
+- Exportar reportes CSV.
+- Imprimir reporte.
+- Importar inventario por CSV.
+- Descargar respaldo JSON.
+
+Formato CSV para importar productos:
+
+codigo,nombre,categoria,stock,stock_minimo,precio_compra,precio_venta
+
+
+10. COMO PUBLICAR INVGUARD
+
+PASO 1: Preparar Supabase
+
+1. Entrar a Supabase.
+2. Abrir tu proyecto.
+3. Ir a SQL Editor.
+4. Ejecutar el archivo:
+
+C:\Users\Alexander\Documents\invguard\supabase\multi_tenant.sql
+
+Ese archivo crea:
+- empresas.
+- empresa_usuarios.
+- invitaciones_empresa.
+- productos.
+- movimientos.
+- seguridad RLS.
+- funciones para movimientos e invitaciones.
+
+
+PASO 2: Configurar autenticacion
+
+En Supabase:
+1. Ir a Authentication.
+2. Activar Email/Password.
+3. Revisar si quieres confirmacion por correo.
+4. Agregar el dominio publicado en URL Configuration cuando ya tengas el link final.
+
+
+PASO 3: Subir a GitHub
+
+1. Crear repositorio en GitHub.
+2. Subir la carpeta:
+
+C:\Users\Alexander\Documents\invguard
+
+No subir node_modules.
+
+
+PASO 4: Publicar en Vercel
+
+1. Entrar a https://vercel.com
+2. Crear cuenta o iniciar sesion.
+3. Importar el repositorio de GitHub.
+4. Configurar:
+   - Build command: npm run build
+   - Output directory: dist
+
+
+PASO 5: Variables de entorno en Vercel
+
+Agregar estas variables:
+
+VITE_SUPABASE_URL=tu_url_de_supabase
+VITE_SUPABASE_ANON_KEY=tu_anon_key_de_supabase
+VITE_REQUIRE_AUTH=true
+
+Estas variables estan en Supabase:
+- Project Settings.
+- API.
+
+
+PASO 6: Probar la app publicada
+
+1. Abrir el link de Vercel.
+2. Crear una cuenta nueva.
+3. Crear un producto.
+4. Registrar una entrada.
+5. Registrar una salida.
+6. Revisar dashboard.
+7. Entrar a Admin.
+8. Crear invitacion para otro usuario.
+
+
+11. QUE NO DEBES HACER
+
+- No publiques la service_role key de Supabase.
+- No des acceso ADMIN a todos.
+- No borres tablas sin respaldo.
+- No uses una sola cuenta para todos los negocios.
+- No desactives RLS si la app sera publica.
+
+
+12. RECOMENDACION FINAL
+
+Para lanzar a personas reales:
+
+1. Ejecuta multi_tenant.sql.
+2. Publica en Vercel.
+3. Prueba con dos cuentas diferentes.
+4. Verifica que cada cuenta solo vea sus propios productos.
+5. Luego comparte el link.
+
+Si eso funciona, InvGuard ya puede ser usado por muchas personas con inventarios separados.
