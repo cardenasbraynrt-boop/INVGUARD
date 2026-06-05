@@ -4,6 +4,7 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 import AuthGate from "./components/AuthGate";
 import Sidebar from "./components/Sidebar";
 import { TenantProvider, useTenant } from "./context/TenantContext";
+import { supabase } from "./services/supabase";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Admin = lazy(() => import("./pages/Admin"));
@@ -56,13 +57,111 @@ function SetupRequired() {
   );
 }
 
+function AccessBlocked() {
+  const { error, reloadTenant } = useTenant();
+
+  return (
+    <div className="grid min-h-[70vh] place-items-center p-6">
+      <div className="max-w-xl rounded-lg border border-white/10 bg-neutral-900 p-6 text-neutral-100">
+        <h1 className="text-2xl font-semibold">Acceso pendiente</h1>
+        <p className="mt-3 text-sm leading-6 text-neutral-400">
+          Tu usuario existe, pero aun no fue asignado a ningun negocio. Pide al
+          administrador de InvGuard que cree o conecte tu negocio.
+        </p>
+        {error && (
+          <p className="mt-4 rounded-lg border border-white/10 bg-white/5 p-3 text-sm">
+            {error}
+          </p>
+        )}
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={reloadTenant}
+            className="rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-teal-400"
+          >
+            Reintentar
+          </button>
+          <button
+            type="button"
+            onClick={() => supabase.auth.signOut()}
+            className="rounded-lg border border-white/10 px-4 py-2 text-sm text-neutral-300 hover:bg-white/5"
+          >
+            Salir
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SuspendedBusiness() {
+  const { empresa, reloadTenant } = useTenant();
+
+  return (
+    <div className="grid min-h-[70vh] place-items-center p-6">
+      <div className="max-w-xl rounded-lg border border-red-400/30 bg-red-400/10 p-6 text-red-50">
+        <h1 className="text-2xl font-semibold">Negocio suspendido</h1>
+        <p className="mt-3 text-sm leading-6 text-red-100/90">
+          {empresa?.nombre || "Este negocio"} esta suspendido temporalmente.
+          Contacta al administrador de InvGuard para reactivar el acceso.
+        </p>
+        <div className="mt-5 flex flex-wrap gap-3">
+          <button
+            type="button"
+            onClick={reloadTenant}
+            className="rounded-lg bg-red-200 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-red-100"
+          >
+            Reintentar
+          </button>
+          <button
+            type="button"
+            onClick={() => supabase.auth.signOut()}
+            className="rounded-lg border border-red-200/30 px-4 py-2 text-sm text-red-50 hover:bg-red-100/10"
+          >
+            Salir
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function TenantGate({ children }) {
-  const { loading, setupRequired } = useTenant();
+  const { accessBlocked, empresa, isSuperAdmin, loading, setupRequired } =
+    useTenant();
 
   if (loading) return <LoadingScreen />;
   if (setupRequired) return <SetupRequired />;
+  if (accessBlocked) return <AccessBlocked />;
+  if (empresa?.estado === "SUSPENDIDO" && !isSuperAdmin) {
+    return <SuspendedBusiness />;
+  }
 
   return children;
+}
+
+function AppRoutes() {
+  const { empresa, isSuperAdmin } = useTenant();
+
+  if (!empresa && isSuperAdmin) {
+    return (
+      <Routes>
+        <Route path="*" element={<Admin />} />
+      </Routes>
+    );
+  }
+
+  return (
+    <Routes>
+      <Route path="/" element={<Dashboard />} />
+      <Route path="/inventario" element={<Inventario />} />
+      <Route path="/movimientos" element={<Movimientos />} />
+      <Route path="/perdidas" element={<Perdidas />} />
+      <Route path="/ia" element={<IA />} />
+      <Route path="/herramientas" element={<Herramientas />} />
+      <Route path="/admin" element={<Admin />} />
+    </Routes>
+  );
 }
 
 export default function App() {
@@ -76,15 +175,7 @@ export default function App() {
 
               <main className="min-w-0">
                 <Suspense fallback={<LoadingScreen />}>
-                  <Routes>
-                    <Route path="/" element={<Dashboard />} />
-                    <Route path="/inventario" element={<Inventario />} />
-                    <Route path="/movimientos" element={<Movimientos />} />
-                    <Route path="/perdidas" element={<Perdidas />} />
-                    <Route path="/ia" element={<IA />} />
-                    <Route path="/herramientas" element={<Herramientas />} />
-                    <Route path="/admin" element={<Admin />} />
-                  </Routes>
+                  <AppRoutes />
                 </Suspense>
               </main>
             </div>

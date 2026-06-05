@@ -12,26 +12,21 @@ import { getSupabaseMessage } from "../utils/inventory";
 
 const TenantContext = createContext(null);
 
-function getBusinessName(user) {
-  return (
-    user?.user_metadata?.business_name ||
-    user?.email?.split("@")?.[0] ||
-    "Mi negocio"
-  );
-}
-
 export function TenantProvider({ children }) {
   const [user, setUser] = useState(null);
   const [empresa, setEmpresa] = useState(null);
   const [membership, setMembership] = useState(null);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [setupRequired, setSetupRequired] = useState(false);
+  const [accessBlocked, setAccessBlocked] = useState(false);
 
   async function loadTenant() {
     setLoading(true);
     setError("");
     setSetupRequired(false);
+    setAccessBlocked(false);
 
     const { data: userResult, error: userError } =
       await supabase.auth.getUser();
@@ -40,6 +35,7 @@ export function TenantProvider({ children }) {
       setUser(null);
       setEmpresa(null);
       setMembership(null);
+      setIsSuperAdmin(false);
       setLoading(false);
       return;
     }
@@ -47,9 +43,24 @@ export function TenantProvider({ children }) {
     const currentUser = userResult.user;
     setUser(currentUser);
 
+    const { data: superAdminResult, error: superAdminError } =
+      await supabase.rpc("es_super_admin");
+
+    if (superAdminError) {
+      setSetupRequired(true);
+      setError(getSupabaseMessage(superAdminError));
+      setLoading(false);
+      return;
+    }
+
+    const nextIsSuperAdmin = Boolean(superAdminResult);
+    setIsSuperAdmin(nextIsSuperAdmin);
+
     const { data: membershipRows, error: membershipError } = await supabase
       .from("empresa_usuarios")
-      .select("id, rol, email, empresa:empresas(id,nombre,rubro,ciudad,created_at)")
+      .select(
+        "id, rol, email, empresa:empresas(id,nombre,rubro,ciudad,estado,plan,beta_started_at,trial_ends_at,created_at)"
+      )
       .eq("user_id", currentUser.id)
       .order("created_at", { ascending: true })
       .limit(1);
@@ -74,70 +85,16 @@ export function TenantProvider({ children }) {
       return;
     }
 
-    const inviteToken = new URLSearchParams(window.location.search).get(
-      "invite"
-    );
+    setEmpresa(null);
+    setMembership(null);
 
-    if (inviteToken) {
-      const { error: inviteError } = await supabase.rpc(
-        "aceptar_invitacion_empresa",
-        {
-          p_token: inviteToken,
-        }
+    if (!nextIsSuperAdmin) {
+      setAccessBlocked(true);
+      setError(
+        "Tu cuenta aun no tiene acceso asignado. Pide al administrador que te agregue a un negocio."
       );
-
-      if (inviteError) {
-        setSetupRequired(true);
-        setError(getSupabaseMessage(inviteError));
-        setLoading(false);
-        return;
-      }
-
-      window.history.replaceState({}, "", window.location.pathname);
-      await loadTenant();
-      return;
     }
 
-    const { data: createdEmpresa, error: empresaError } = await supabase
-      .from("empresas")
-      .insert([
-        {
-          nombre: getBusinessName(currentUser),
-          owner_id: currentUser.id,
-          rubro: currentUser.user_metadata?.business_type || "",
-          ciudad: currentUser.user_metadata?.city || "",
-        },
-      ])
-      .select("*")
-      .single();
-
-    if (empresaError) {
-      setSetupRequired(true);
-      setError(getSupabaseMessage(empresaError));
-      setLoading(false);
-      return;
-    }
-
-    const { error: relationError } = await supabase
-      .from("empresa_usuarios")
-      .insert([
-        {
-          empresa_id: createdEmpresa.id,
-          user_id: currentUser.id,
-          email: currentUser.email,
-          rol: "ADMIN",
-        },
-      ]);
-
-    if (relationError) {
-      setSetupRequired(true);
-      setError(getSupabaseMessage(relationError));
-      setLoading(false);
-      return;
-    }
-
-    setEmpresa(createdEmpresa);
-    setMembership({ rol: "ADMIN", email: currentUser.email });
     setLoading(false);
   }
 
@@ -159,12 +116,23 @@ export function TenantProvider({ children }) {
       empresa,
       empresaId: empresa?.id,
       membership,
+      isSuperAdmin,
       loading,
       error,
       setupRequired,
+      accessBlocked,
       reloadTenant: loadTenant,
     }),
-    [user, empresa, membership, loading, error, setupRequired]
+    [
+      user,
+      empresa,
+      membership,
+      isSuperAdmin,
+      loading,
+      error,
+      setupRequired,
+      accessBlocked,
+    ]
   );
 
   return (

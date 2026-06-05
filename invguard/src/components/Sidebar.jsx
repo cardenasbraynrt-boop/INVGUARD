@@ -56,7 +56,7 @@ const items = [
 ];
 
 export default function Sidebar() {
-  const { empresa } = useTenant();
+  const { empresa, isSuperAdmin } = useTenant();
   const [userEmail, setUserEmail] = useState("");
   const [clock, setClock] = useState("");
 
@@ -93,6 +93,11 @@ export default function Sidebar() {
     return () => subscription.unsubscribe();
   }, []);
 
+  const visibleItems =
+    !empresa && isSuperAdmin
+      ? items.filter((item) => item.to === "/admin")
+      : items;
+
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-neutral-950/95 backdrop-blur">
       <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
@@ -107,7 +112,8 @@ export default function Sidebar() {
               </h1>
               <p className="flex items-center gap-1 text-xs text-neutral-400">
                 <FiMapPin className="h-3.5 w-3.5 text-teal-300" />
-                {empresa?.nombre || "Inventario para cualquier negocio"}
+                {empresa?.nombre ||
+                  (isSuperAdmin ? "Super Admin" : "Inventario privado")}
               </p>
             </div>
           </div>
@@ -115,7 +121,7 @@ export default function Sidebar() {
           <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-400">
             <span className="inline-flex items-center gap-2 rounded-full border border-teal-400/25 bg-teal-400/10 px-3 py-1 text-teal-100">
               <span className="h-2 w-2 rounded-full bg-teal-300" />
-              Sincronizado
+              {isSuperAdmin ? "Control maestro" : "Sincronizado"}
             </span>
             <span>{clock}</span>
             {requireAuth && userEmail && (
@@ -135,7 +141,7 @@ export default function Sidebar() {
         </div>
 
         <nav className="flex gap-2 overflow-x-auto">
-          {items.map((item) => {
+          {visibleItems.map((item) => {
             const Icon = item.icon;
 
             return (

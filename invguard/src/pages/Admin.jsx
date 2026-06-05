@@ -1,26 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import {
   FiBriefcase,
-  FiCheck,
-  FiCopy,
+  FiCalendar,
+  FiPower,
   FiRefreshCw,
   FiSave,
-  FiSend,
   FiShield,
+  FiTrash2,
   FiUserPlus,
   FiUsers,
 } from "react-icons/fi";
 
 import { useTenant } from "../context/TenantContext";
 import { supabase } from "../services/supabase";
-import {
-  buildWhatsAppUrl,
-  formatDate,
-  getSupabaseMessage,
-} from "../utils/inventory";
+import { formatDate, getSupabaseMessage } from "../utils/inventory";
 
 const roles = ["ADMIN", "SUPERVISOR", "EMPLEADO"];
+const estados = ["BETA", "ACTIVO", "SUSPENDIDO"];
 
 function RoleBadge({ rol }) {
   const className =
@@ -37,33 +33,72 @@ function RoleBadge({ rol }) {
   );
 }
 
+function StatusBadge({ estado }) {
+  const className =
+    estado === "ACTIVO"
+      ? "border-emerald-400/25 bg-emerald-400/10 text-emerald-100"
+      : estado === "SUSPENDIDO"
+        ? "border-red-400/25 bg-red-400/10 text-red-100"
+        : "border-sky-400/25 bg-sky-400/10 text-sky-100";
+
+  return (
+    <span className={`rounded-full border px-2.5 py-1 text-xs ${className}`}>
+      {estado || "BETA"}
+    </span>
+  );
+}
+
+function daysLeft(value) {
+  if (!value) return null;
+  return Math.ceil((new Date(value).getTime() - Date.now()) / 86400000);
+}
+
+function MetricCard({ icon: Icon, label, value, tone = "text-white" }) {
+  return (
+    <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
+      <div className="flex items-center justify-between gap-4">
+        <p className="text-sm text-neutral-400">{label}</p>
+        <Icon className="h-5 w-5 text-teal-300" />
+      </div>
+      <p className={`mt-2 break-words text-2xl font-semibold ${tone}`}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
 export default function Admin() {
   const {
     empresa,
     empresaId,
+    isSuperAdmin,
     membership,
-    user,
     reloadTenant,
+    user,
   } = useTenant();
-  const [searchParams, setSearchParams] = useSearchParams();
   const [members, setMembers] = useState([]);
-  const [invites, setInvites] = useState([]);
+  const [businesses, setBusinesses] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [inviteResult, setInviteResult] = useState(null);
-  const [inviteForm, setInviteForm] = useState({
+  const [memberForm, setMemberForm] = useState({
     email: "",
     rol: "EMPLEADO",
-    phone: "",
   });
   const [businessForm, setBusinessForm] = useState({
     nombre: empresa?.nombre || "",
     rubro: empresa?.rubro || "",
     ciudad: empresa?.ciudad || "",
   });
+  const [newBusinessForm, setNewBusinessForm] = useState({
+    nombre: "",
+    rubro: "",
+    ciudad: "",
+    ownerEmail: "",
+  });
 
   const isAdmin = membership?.rol === "ADMIN";
+  const canManageCurrentBusiness = Boolean(empresaId && (isAdmin || isSuperAdmin));
 
   useEffect(() => {
     setBusinessForm({
@@ -74,22 +109,24 @@ export default function Admin() {
   }, [empresa]);
 
   async function cargarAdmin() {
-    if (!empresaId) return;
-
     setLoading(true);
     setMessage("");
 
-    const [membersResult, invitesResult] = await Promise.all([
-      supabase
-        .from("empresa_usuarios")
-        .select("id,user_id,email,rol,created_at")
-        .eq("empresa_id", empresaId)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("invitaciones_empresa")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("created_at", { ascending: false }),
+    const membersPromise = empresaId
+      ? supabase
+          .from("empresa_usuarios")
+          .select("id,user_id,email,rol,created_at")
+          .eq("empresa_id", empresaId)
+          .order("created_at", { ascending: true })
+      : Promise.resolve({ data: [], error: null });
+
+    const businessesPromise = isSuperAdmin
+      ? supabase.rpc("listar_empresas_admin")
+      : Promise.resolve({ data: [], error: null });
+
+    const [membersResult, businessesResult] = await Promise.all([
+      membersPromise,
+      businessesPromise,
     ]);
 
     if (membersResult.error) {
@@ -98,52 +135,26 @@ export default function Admin() {
       return;
     }
 
-    setMembers(membersResult.data || []);
-
-    if (invitesResult.error) {
-      setInvites([]);
-      setMessage(
-        "Para usar invitaciones ejecuta supabase/multi_tenant.sql actualizado."
-      );
-    } else {
-      setInvites(invitesResult.data || []);
+    if (businessesResult.error) {
+      setMessage(getSupabaseMessage(businessesResult.error));
+      setLoading(false);
+      return;
     }
 
+    setMembers(membersResult.data || []);
+    setBusinesses(businessesResult.data || []);
     setLoading(false);
   }
 
   useEffect(() => {
     cargarAdmin();
-  }, [empresaId]);
-
-  useEffect(() => {
-    const token = searchParams.get("invite");
-
-    if (!token) return;
-
-    async function aceptarInvitacion() {
-      const { error } = await supabase.rpc("aceptar_invitacion_empresa", {
-        p_token: token,
-      });
-
-      if (error) {
-        setMessage(getSupabaseMessage(error));
-        return;
-      }
-
-      setMessage("Invitacion aceptada. Tu cuenta ya tiene acceso.");
-      setSearchParams({});
-      await reloadTenant();
-      await cargarAdmin();
-    }
-
-    aceptarInvitacion();
-  }, [searchParams, setSearchParams, reloadTenant]);
+  }, [empresaId, isSuperAdmin]);
 
   async function guardarEmpresa() {
-    if (!isAdmin) return;
+    if (!canManageCurrentBusiness) return;
 
     setSaving(true);
+    setMessage("");
 
     const { error } = await supabase
       .from("empresas")
@@ -163,19 +174,20 @@ export default function Admin() {
 
     setMessage("Datos del negocio actualizados.");
     await reloadTenant();
+    await cargarAdmin();
   }
 
-  async function crearInvitacion() {
-    if (!isAdmin) return;
+  async function crearNegocio() {
+    if (!isSuperAdmin) return;
 
     setSaving(true);
-    setInviteResult(null);
     setMessage("");
 
-    const { data, error } = await supabase.rpc("crear_invitacion_empresa", {
-      p_empresa_id: empresaId,
-      p_email: inviteForm.email.trim().toLowerCase(),
-      p_rol: inviteForm.rol,
+    const { error } = await supabase.rpc("crear_empresa_admin", {
+      p_nombre: newBusinessForm.nombre.trim(),
+      p_rubro: newBusinessForm.rubro.trim(),
+      p_ciudad: newBusinessForm.ciudad.trim(),
+      p_owner_email: newBusinessForm.ownerEmail.trim().toLowerCase(),
     });
 
     setSaving(false);
@@ -185,41 +197,133 @@ export default function Admin() {
       return;
     }
 
-    const invite = Array.isArray(data) ? data[0] : data;
-    setInviteResult(invite);
-    setInviteForm((current) => ({
-      ...current,
-      email: "",
-    }));
+    setNewBusinessForm({
+      nombre: "",
+      rubro: "",
+      ciudad: "",
+      ownerEmail: "",
+    });
+    setMessage("Negocio creado con beta de 30 dias.");
     await cargarAdmin();
   }
 
-  async function copiar(text) {
-    await navigator.clipboard.writeText(text);
-    setMessage("Copiado.");
+  async function agregarUsuario() {
+    if (!canManageCurrentBusiness) return;
+
+    setSaving(true);
+    setMessage("");
+
+    const { error } = await supabase.rpc("agregar_usuario_empresa", {
+      p_empresa_id: empresaId,
+      p_email: memberForm.email.trim().toLowerCase(),
+      p_rol: memberForm.rol,
+    });
+
+    setSaving(false);
+
+    if (error) {
+      setMessage(getSupabaseMessage(error));
+      return;
+    }
+
+    setMemberForm({ email: "", rol: "EMPLEADO" });
+    setMessage("Usuario agregado al negocio.");
+    await cargarAdmin();
   }
 
-  const inviteLink = useMemo(() => {
-    if (!inviteResult?.token) return "";
-    return `${window.location.origin}/admin?invite=${inviteResult.token}`;
-  }, [inviteResult]);
+  async function cambiarRol(member, nextRol) {
+    if (!canManageCurrentBusiness || member.rol === nextRol) return;
 
-  const inviteMessage = useMemo(() => {
-    if (!inviteLink) return "";
-    return [
-      `Te invito a InvGuard para gestionar inventario de ${empresa?.nombre}.`,
-      `Rol: ${inviteResult?.rol}`,
-      `Entra aqui: ${inviteLink}`,
-    ].join("\n");
-  }, [empresa?.nombre, inviteLink, inviteResult?.rol]);
+    setSaving(true);
+    setMessage("");
 
-  function abrirWhatsApp() {
-    window.open(
-      buildWhatsAppUrl(inviteForm.phone, inviteMessage),
-      "_blank",
-      "noopener,noreferrer"
+    const { error } = await supabase.rpc("cambiar_rol_usuario_empresa", {
+      p_empresa_id: empresaId,
+      p_email: member.email,
+      p_rol: nextRol,
+    });
+
+    setSaving(false);
+
+    if (error) {
+      setMessage(getSupabaseMessage(error));
+      return;
+    }
+
+    setMessage("Rol actualizado.");
+    await cargarAdmin();
+  }
+
+  async function quitarUsuario(member) {
+    if (!canManageCurrentBusiness) return;
+
+    const confirmed = window.confirm(
+      `Quitar acceso a ${member.email || "este usuario"}?`
     );
+
+    if (!confirmed) return;
+
+    setSaving(true);
+    setMessage("");
+
+    const { error } = await supabase.rpc("quitar_usuario_empresa", {
+      p_empresa_id: empresaId,
+      p_email: member.email,
+    });
+
+    setSaving(false);
+
+    if (error) {
+      setMessage(getSupabaseMessage(error));
+      return;
+    }
+
+    setMessage("Usuario retirado del negocio.");
+    await cargarAdmin();
   }
+
+  async function cambiarEstadoEmpresa(businessId, nextEstado) {
+    if (!isSuperAdmin) return;
+
+    setSaving(true);
+    setMessage("");
+
+    const { error } = await supabase.rpc("actualizar_estado_empresa", {
+      p_empresa_id: businessId,
+      p_estado: nextEstado,
+    });
+
+    setSaving(false);
+
+    if (error) {
+      setMessage(getSupabaseMessage(error));
+      return;
+    }
+
+    setMessage("Estado comercial actualizado.");
+    await cargarAdmin();
+    await reloadTenant();
+  }
+
+  const businessSummary = useMemo(() => {
+    const beta = businesses.filter((item) => item.estado === "BETA");
+    const suspended = businesses.filter(
+      (item) => item.estado === "SUSPENDIDO"
+    );
+    const expiring = beta.filter((item) => {
+      const left = daysLeft(item.trial_ends_at);
+      return left !== null && left <= 7;
+    });
+
+    return {
+      beta: beta.length,
+      suspended: suspended.length,
+      expiring: expiring.length,
+      total: businesses.length,
+    };
+  }, [businesses]);
+
+  const currentDaysLeft = daysLeft(empresa?.trial_ends_at);
 
   return (
     <section className="space-y-6 p-4 sm:p-6 lg:p-8">
@@ -230,7 +334,7 @@ export default function Admin() {
           </p>
           <h1 className="mt-1 text-3xl font-semibold">Admin</h1>
           <p className="mt-2 text-sm text-neutral-400">
-            Gestiona tu negocio, usuarios, roles e invitaciones.
+            Accesos, negocios, roles y estado comercial.
           </p>
         </div>
 
@@ -251,267 +355,418 @@ export default function Admin() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-sm text-neutral-400">Negocio</p>
-            <FiBriefcase className="h-5 w-5 text-teal-300" />
-          </div>
-          <p className="mt-2 text-2xl font-semibold">{empresa?.nombre}</p>
-          <p className="mt-1 text-sm text-neutral-400">
-            {empresa?.rubro || "Sin rubro"}
-          </p>
-        </div>
-
-        <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-sm text-neutral-400">Tu acceso</p>
-            <FiShield className="h-5 w-5 text-amber-300" />
-          </div>
-          <div className="mt-3 flex items-center gap-3">
-            <RoleBadge rol={membership?.rol || "SIN ROL"} />
-            <span className="text-sm text-neutral-400">{user?.email}</span>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
-          <div className="flex items-center justify-between gap-4">
-            <p className="text-sm text-neutral-400">Usuarios</p>
-            <FiUsers className="h-5 w-5 text-emerald-300" />
-          </div>
-          <p className="mt-2 text-3xl font-semibold">{members.length}</p>
-          <p className="mt-1 text-sm text-neutral-400">
-            {isAdmin ? "Puedes administrar roles." : "Modo lectura."}
-          </p>
-        </div>
-      </div>
-
-      <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
-          <h2 className="text-lg font-semibold">Datos del negocio</h2>
-          <div className="mt-5 grid gap-3">
-            <input
-              className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
-              placeholder="Nombre"
-              value={businessForm.nombre}
-              disabled={!isAdmin}
-              onChange={(event) =>
-                setBusinessForm((current) => ({
-                  ...current,
-                  nombre: event.target.value,
-                }))
+      {isSuperAdmin && (
+        <div className="space-y-4">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              icon={FiBriefcase}
+              label="Negocios"
+              value={businessSummary.total}
+            />
+            <MetricCard
+              icon={FiCalendar}
+              label="En beta"
+              value={businessSummary.beta}
+              tone="text-sky-200"
+            />
+            <MetricCard
+              icon={FiPower}
+              label="Suspendidos"
+              value={businessSummary.suspended}
+              tone={
+                businessSummary.suspended ? "text-red-200" : "text-white"
               }
             />
-            <input
-              className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
-              placeholder="Rubro"
-              value={businessForm.rubro}
-              disabled={!isAdmin}
-              onChange={(event) =>
-                setBusinessForm((current) => ({
-                  ...current,
-                  rubro: event.target.value,
-                }))
-              }
+            <MetricCard
+              icon={FiShield}
+              label="Beta por vencer"
+              value={businessSummary.expiring}
+              tone={businessSummary.expiring ? "text-amber-200" : "text-white"}
             />
-            <input
-              className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
-              placeholder="Ciudad"
-              value={businessForm.ciudad}
-              disabled={!isAdmin}
-              onChange={(event) =>
-                setBusinessForm((current) => ({
-                  ...current,
-                  ciudad: event.target.value,
-                }))
-              }
-            />
-            <button
-              type="button"
-              onClick={guardarEmpresa}
-              disabled={!isAdmin || saving}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-teal-400"
-            >
-              <FiSave className="h-4 w-4" />
-              Guardar
-            </button>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
-          <h2 className="text-lg font-semibold">Invitar usuario</h2>
-          <div className="mt-5 grid gap-3 md:grid-cols-[1fr_160px]">
-            <input
-              className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
-              placeholder="correo@negocio.com"
-              type="email"
-              value={inviteForm.email}
-              disabled={!isAdmin}
-              onChange={(event) =>
-                setInviteForm((current) => ({
-                  ...current,
-                  email: event.target.value,
-                }))
-              }
-            />
-            <select
-              className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
-              value={inviteForm.rol}
-              disabled={!isAdmin}
-              onChange={(event) =>
-                setInviteForm((current) => ({
-                  ...current,
-                  rol: event.target.value,
-                }))
-              }
-            >
-              {roles.map((rol) => (
-                <option key={rol} value={rol}>
-                  {rol}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              onClick={crearInvitacion}
-              disabled={!isAdmin || saving || !inviteForm.email}
-              className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-emerald-400 md:col-span-2"
-            >
-              <FiUserPlus className="h-4 w-4" />
-              Crear invitacion
-            </button>
           </div>
 
-          {inviteResult && (
-            <div className="mt-5 rounded-lg border border-teal-400/25 bg-teal-400/10 p-4">
-              <p className="text-sm font-semibold text-teal-100">
-                Link de invitacion
-              </p>
-              <p className="mt-2 break-all rounded-lg bg-neutral-950/60 p-3 text-sm text-neutral-200">
-                {inviteLink}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => copiar(inviteLink)}
-                  className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5"
-                >
-                  <FiCopy className="h-4 w-4" />
-                  Copiar link
-                </button>
+          <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
+            <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
+              <h2 className="text-lg font-semibold">Crear negocio</h2>
+              <div className="mt-5 grid gap-3">
                 <input
                   className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
-                  placeholder="WhatsApp opcional"
-                  value={inviteForm.phone}
+                  placeholder="Nombre del negocio"
+                  value={newBusinessForm.nombre}
                   onChange={(event) =>
-                    setInviteForm((current) => ({
+                    setNewBusinessForm((current) => ({
                       ...current,
-                      phone: event.target.value,
+                      nombre: event.target.value,
+                    }))
+                  }
+                />
+                <input
+                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                  placeholder="Rubro"
+                  value={newBusinessForm.rubro}
+                  onChange={(event) =>
+                    setNewBusinessForm((current) => ({
+                      ...current,
+                      rubro: event.target.value,
+                    }))
+                  }
+                />
+                <input
+                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                  placeholder="Ciudad"
+                  value={newBusinessForm.ciudad}
+                  onChange={(event) =>
+                    setNewBusinessForm((current) => ({
+                      ...current,
+                      ciudad: event.target.value,
+                    }))
+                  }
+                />
+                <input
+                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                  placeholder="Correo del dueno"
+                  type="email"
+                  value={newBusinessForm.ownerEmail}
+                  onChange={(event) =>
+                    setNewBusinessForm((current) => ({
+                      ...current,
+                      ownerEmail: event.target.value,
                     }))
                   }
                 />
                 <button
                   type="button"
-                  onClick={abrirWhatsApp}
-                  className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm hover:bg-white/5"
+                  onClick={crearNegocio}
+                  disabled={
+                    saving ||
+                    !newBusinessForm.nombre ||
+                    !newBusinessForm.ownerEmail
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-teal-400 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <FiSend className="h-4 w-4" />
-                  Enviar
+                  <FiBriefcase className="h-4 w-4" />
+                  Crear beta 30 dias
                 </button>
               </div>
             </div>
-          )}
-        </div>
-      </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        <div className="rounded-lg border border-white/10 bg-neutral-900">
-          <div className="border-b border-white/10 p-5">
-            <h2 className="text-lg font-semibold">Equipo</h2>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[620px] text-sm">
-              <thead className="bg-white/[0.03] text-left text-neutral-400">
-                <tr>
-                  <th className="px-5 py-3 font-medium">Usuario</th>
-                  <th className="px-5 py-3 font-medium">Rol</th>
-                  <th className="px-5 py-3 font-medium">Alta</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-white/10">
-                {members.map((member) => (
-                  <tr key={member.id}>
-                    <td className="px-5 py-3">
-                      {member.email || member.user_id}
-                    </td>
-                    <td className="px-5 py-3">
-                      <RoleBadge rol={member.rol} />
-                    </td>
-                    <td className="px-5 py-3 text-neutral-400">
-                      {formatDate(member.created_at)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="rounded-lg border border-white/10 bg-neutral-900">
-          <div className="border-b border-white/10 p-5">
-            <h2 className="text-lg font-semibold">Invitaciones</h2>
-          </div>
-          <div className="divide-y divide-white/10">
-            {invites.map((invite) => (
-              <div
-                key={invite.id}
-                className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between"
-              >
-                <div>
-                  <p className="font-medium">{invite.email}</p>
-                  <p className="text-sm text-neutral-400">
-                    {invite.estado} · vence {formatDate(invite.expires_at)}
-                  </p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <RoleBadge rol={invite.rol} />
-                  {invite.estado === "PENDIENTE" && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        copiar(
-                          `${window.location.origin}/admin?invite=${invite.token}`
-                        )
-                      }
-                      className="rounded-lg border border-white/10 p-2 hover:bg-white/5"
-                      aria-label="Copiar invitacion"
-                    >
-                      <FiCopy className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
+            <div className="rounded-lg border border-white/10 bg-neutral-900">
+              <div className="border-b border-white/10 p-5">
+                <h2 className="text-lg font-semibold">Negocios registrados</h2>
               </div>
-            ))}
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[820px] text-sm">
+                  <thead className="bg-white/[0.03] text-left text-neutral-400">
+                    <tr>
+                      <th className="px-5 py-3 font-medium">Negocio</th>
+                      <th className="px-5 py-3 font-medium">Dueno</th>
+                      <th className="px-5 py-3 font-medium">Estado</th>
+                      <th className="px-5 py-3 font-medium">Beta hasta</th>
+                      <th className="px-5 py-3 font-medium">Usuarios</th>
+                      <th className="px-5 py-3 font-medium">Cambiar</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/10">
+                    {businesses.map((business) => {
+                      const left = daysLeft(business.trial_ends_at);
 
-            {!loading && invites.length === 0 && (
-              <p className="p-5 text-sm text-neutral-400">
-                No hay invitaciones.
-              </p>
-            )}
+                      return (
+                        <tr key={business.id}>
+                          <td className="px-5 py-3">
+                            <div>
+                              <p className="font-medium">{business.nombre}</p>
+                              <p className="text-xs text-neutral-500">
+                                {business.rubro || "Sin rubro"} /{" "}
+                                {business.ciudad || "Sin ciudad"}
+                              </p>
+                            </div>
+                          </td>
+                          <td className="px-5 py-3 text-neutral-300">
+                            {business.owner_email || "-"}
+                          </td>
+                          <td className="px-5 py-3">
+                            <StatusBadge estado={business.estado} />
+                          </td>
+                          <td className="px-5 py-3 text-neutral-400">
+                            <div>{formatDate(business.trial_ends_at)}</div>
+                            {business.estado === "BETA" && left !== null && (
+                              <span
+                                className={
+                                  left <= 7
+                                    ? "text-amber-200"
+                                    : "text-neutral-500"
+                                }
+                              >
+                                {left < 0 ? "Vencida" : `${left} dias`}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-5 py-3">
+                            {business.usuarios || 0}
+                          </td>
+                          <td className="px-5 py-3">
+                            <select
+                              className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                              value={business.estado || "BETA"}
+                              disabled={saving}
+                              onChange={(event) =>
+                                cambiarEstadoEmpresa(
+                                  business.id,
+                                  event.target.value
+                                )
+                              }
+                            >
+                              {estados.map((estado) => (
+                                <option key={estado} value={estado}>
+                                  {estado}
+                                </option>
+                              ))}
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+
+                    {!loading && businesses.length === 0 && (
+                      <tr>
+                        <td
+                          colSpan="6"
+                          className="px-5 py-8 text-center text-neutral-400"
+                        >
+                          Aun no hay negocios registrados.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
-      <div className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-4 text-sm text-emerald-50">
-        <div className="flex items-center gap-2 font-semibold">
-          <FiCheck className="h-4 w-4" />
-          Como lo controlas
-        </div>
-        <p className="mt-2 text-emerald-100/90">
-          Tu cuenta ADMIN controla el negocio, invita usuarios y define roles.
-          Los datos quedan separados por empresa con RLS en Supabase.
-        </p>
-      </div>
+      {empresa ? (
+        <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <MetricCard
+              icon={FiBriefcase}
+              label="Negocio actual"
+              value={empresa.nombre}
+            />
+            <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm text-neutral-400">Estado</p>
+                <FiPower className="h-5 w-5 text-teal-300" />
+              </div>
+              <div className="mt-3">
+                <StatusBadge estado={empresa.estado} />
+              </div>
+              <p className="mt-3 text-sm text-neutral-400">
+                {empresa.estado === "BETA" && currentDaysLeft !== null
+                  ? currentDaysLeft < 0
+                    ? "Beta vencida"
+                    : `${currentDaysLeft} dias de beta`
+                  : empresa.plan || "Plan activo"}
+              </p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-sm text-neutral-400">Tu acceso</p>
+                <FiShield className="h-5 w-5 text-amber-300" />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center gap-3">
+                <RoleBadge rol={membership?.rol || "SIN ROL"} />
+                <span className="max-w-[220px] truncate text-sm text-neutral-400">
+                  {user?.email}
+                </span>
+              </div>
+            </div>
+            <MetricCard
+              icon={FiUsers}
+              label="Usuarios"
+              value={members.length}
+            />
+          </div>
+
+          <div className="grid gap-4 xl:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
+              <h2 className="text-lg font-semibold">Datos del negocio</h2>
+              <div className="mt-5 grid gap-3">
+                <input
+                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                  placeholder="Nombre"
+                  value={businessForm.nombre}
+                  disabled={!canManageCurrentBusiness}
+                  onChange={(event) =>
+                    setBusinessForm((current) => ({
+                      ...current,
+                      nombre: event.target.value,
+                    }))
+                  }
+                />
+                <input
+                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                  placeholder="Rubro"
+                  value={businessForm.rubro}
+                  disabled={!canManageCurrentBusiness}
+                  onChange={(event) =>
+                    setBusinessForm((current) => ({
+                      ...current,
+                      rubro: event.target.value,
+                    }))
+                  }
+                />
+                <input
+                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                  placeholder="Ciudad"
+                  value={businessForm.ciudad}
+                  disabled={!canManageCurrentBusiness}
+                  onChange={(event) =>
+                    setBusinessForm((current) => ({
+                      ...current,
+                      ciudad: event.target.value,
+                    }))
+                  }
+                />
+                <button
+                  type="button"
+                  onClick={guardarEmpresa}
+                  disabled={!canManageCurrentBusiness || saving}
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-teal-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <FiSave className="h-4 w-4" />
+                  Guardar
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
+              <h2 className="text-lg font-semibold">Agregar usuario</h2>
+              <div className="mt-5 grid gap-3 md:grid-cols-[1fr_160px]">
+                <input
+                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                  placeholder="correo@negocio.com"
+                  type="email"
+                  value={memberForm.email}
+                  disabled={!canManageCurrentBusiness}
+                  onChange={(event) =>
+                    setMemberForm((current) => ({
+                      ...current,
+                      email: event.target.value,
+                    }))
+                  }
+                />
+                <select
+                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                  value={memberForm.rol}
+                  disabled={!canManageCurrentBusiness}
+                  onChange={(event) =>
+                    setMemberForm((current) => ({
+                      ...current,
+                      rol: event.target.value,
+                    }))
+                  }
+                >
+                  {roles.map((rol) => (
+                    <option key={rol} value={rol}>
+                      {rol}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={agregarUsuario}
+                  disabled={
+                    !canManageCurrentBusiness || saving || !memberForm.email
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-500 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-60 md:col-span-2"
+                >
+                  <FiUserPlus className="h-4 w-4" />
+                  Agregar
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-white/10 bg-neutral-900">
+            <div className="border-b border-white/10 p-5">
+              <h2 className="text-lg font-semibold">Equipo</h2>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] text-sm">
+                <thead className="bg-white/[0.03] text-left text-neutral-400">
+                  <tr>
+                    <th className="px-5 py-3 font-medium">Usuario</th>
+                    <th className="px-5 py-3 font-medium">Rol</th>
+                    <th className="px-5 py-3 font-medium">Alta</th>
+                    <th className="px-5 py-3 font-medium">Accion</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/10">
+                  {members.map((member) => (
+                    <tr key={member.id}>
+                      <td className="px-5 py-3">
+                        {member.email || member.user_id}
+                      </td>
+                      <td className="px-5 py-3">
+                        {canManageCurrentBusiness ? (
+                          <select
+                            className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                            value={member.rol}
+                            disabled={saving}
+                            onChange={(event) =>
+                              cambiarRol(member, event.target.value)
+                            }
+                          >
+                            {roles.map((rol) => (
+                              <option key={rol} value={rol}>
+                                {rol}
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <RoleBadge rol={member.rol} />
+                        )}
+                      </td>
+                      <td className="px-5 py-3 text-neutral-400">
+                        {formatDate(member.created_at)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <button
+                          type="button"
+                          onClick={() => quitarUsuario(member)}
+                          disabled={!canManageCurrentBusiness || saving}
+                          className="inline-flex items-center gap-2 rounded-lg border border-white/10 px-3 py-2 text-sm text-neutral-300 hover:bg-white/5 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <FiTrash2 className="h-4 w-4" />
+                          Quitar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+
+                  {!loading && members.length === 0 && (
+                    <tr>
+                      <td
+                        colSpan="4"
+                        className="px-5 py-8 text-center text-neutral-400"
+                      >
+                        Aun no hay usuarios asignados.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      ) : (
+        isSuperAdmin && (
+          <div className="rounded-lg border border-teal-400/20 bg-teal-400/10 p-4 text-sm text-teal-50">
+            Tu cuenta Super Admin esta lista para crear y controlar negocios.
+          </div>
+        )
+      )}
     </section>
   );
 }

@@ -4,28 +4,51 @@ INVGUARD - MANUAL DE USO Y PUBLICACION
 
 InvGuard es una aplicacion web para controlar inventario, movimientos, perdidas, reportes, reorden y usuarios.
 
-Cada persona o negocio crea su propia cuenta. Sus productos, movimientos y reportes quedan separados de los demas negocios.
+La app funciona como SaaS privado: cada negocio tiene sus propios productos y movimientos, separados por empresa con seguridad RLS en Supabase.
 
 
 2. COMO ENTRA UN USUARIO
 
-1. Abrir la pagina publicada de InvGuard.
-2. Presionar "Crear usuario nuevo".
-3. Escribir:
-   - Nombre del negocio.
-   - Rubro.
-   - Correo.
-   - Password.
-4. Crear cuenta.
-5. Al entrar por primera vez, InvGuard crea automaticamente el negocio privado de ese usuario.
+El registro publico esta cerrado.
+
+Flujo correcto:
+1. El administrador de InvGuard pide el correo del cliente.
+2. El administrador crea ese usuario en Supabase Auth con una password temporal.
+3. El administrador entra al panel Admin de InvGuard.
+4. Crea el negocio con beta de 30 dias.
+5. Asigna el correo del dueno.
+6. El cliente entra a InvGuard con correo y password.
+
+Si un usuario inicia sesion sin negocio asignado, vera una pantalla de acceso pendiente.
 
 
-3. ROLES DEL SISTEMA
+3. SUPER ADMIN
+
+El Super Admin es tu cuenta principal.
+
+Desde el panel Admin puedes:
+- Crear negocios.
+- Asignar dueno por correo.
+- Ver todos los negocios registrados.
+- Ver fecha de vencimiento de beta.
+- Cambiar estado comercial.
+- Suspender negocios.
+- Agregar usuarios existentes por correo.
+- Cambiar roles.
+- Quitar usuarios.
+
+Estados comerciales:
+- BETA: negocio en prueba gratis por 30 dias.
+- ACTIVO: cliente que continua usando el servicio.
+- SUSPENDIDO: negocio sin acceso operativo.
+
+
+4. ROLES DEL NEGOCIO
 
 ADMIN:
 - Controla el negocio.
 - Edita datos del negocio.
-- Invita usuarios.
+- Administra usuarios del negocio.
 - Puede administrar inventario, movimientos, perdidas y reportes.
 
 SUPERVISOR:
@@ -37,24 +60,25 @@ EMPLEADO:
 - Ideal para registrar movimientos o revisar productos.
 
 
-4. PANEL ADMIN
+5. PANEL ADMIN
 
-La pantalla Admin sirve para controlar el sistema.
+Si entras como Super Admin, Admin muestra:
+- resumen de negocios,
+- cantidad en beta,
+- suspendidos,
+- betas por vencer,
+- formulario para crear negocio,
+- tabla de negocios con estado y vencimiento.
 
-Desde Admin puedes:
-- Ver el nombre del negocio.
-- Editar nombre, rubro y ciudad.
-- Ver tu rol.
-- Ver usuarios del negocio.
-- Crear invitaciones para nuevos usuarios.
-- Copiar el link de invitacion.
-- Enviar invitacion por WhatsApp.
-
-Importante:
-El primer usuario que crea el negocio queda como ADMIN.
+Si entras como ADMIN de un negocio, Admin muestra:
+- datos del negocio,
+- estado comercial,
+- usuarios,
+- formulario para agregar usuario existente,
+- tabla de equipo y roles.
 
 
-5. INVENTARIO
+6. INVENTARIO
 
 La pantalla Inventario sirve para agregar, editar, buscar y exportar productos.
 
@@ -74,7 +98,7 @@ Uso recomendado:
 4. Revisar productos con stock bajo cada dia.
 
 
-6. MOVIMIENTOS
+7. MOVIMIENTOS
 
 La pantalla Movimientos sirve para registrar entradas y salidas.
 
@@ -94,7 +118,7 @@ Para registrar:
 5. Presionar Registrar.
 
 
-7. PERDIDAS
+8. PERDIDAS
 
 La pantalla Perdidas sirve para registrar mermas, robos, vencimientos, roturas o ajustes.
 
@@ -104,7 +128,7 @@ Cuando registras una perdida:
 - Queda historial para reportes.
 
 
-8. ANALISIS
+9. ANALISIS
 
 La pantalla Analisis muestra:
 - Productos con riesgo.
@@ -113,10 +137,8 @@ La pantalla Analisis muestra:
 - Perdidas por categoria.
 - Alertas del negocio.
 
-Sirve para tomar decisiones sin revisar todo manualmente.
 
-
-9. HERRAMIENTAS
+10. HERRAMIENTAS
 
 La pantalla Herramientas incluye:
 - Pedido sugerido.
@@ -132,9 +154,9 @@ Formato CSV para importar productos:
 codigo,nombre,categoria,stock,stock_minimo,precio_compra,precio_venta
 
 
-10. COMO PUBLICAR INVGUARD
+11. COMO ACTIVAR SUPABASE
 
-PASO 1: Preparar Supabase
+PASO 1: Ejecutar SQL
 
 1. Entrar a Supabase.
 2. Abrir tu proyecto.
@@ -144,25 +166,47 @@ PASO 1: Preparar Supabase
 C:\Users\Alexander\Documents\invguard\supabase\multi_tenant.sql
 
 Ese archivo crea:
+- app_admins.
 - empresas.
 - empresa_usuarios.
 - invitaciones_empresa.
 - productos.
 - movimientos.
 - seguridad RLS.
-- funciones para movimientos e invitaciones.
+- funciones Super Admin.
+- funciones para movimientos y usuarios.
 
 
-PASO 2: Configurar autenticacion
+PASO 2: Crear tu usuario principal
 
 En Supabase:
 1. Ir a Authentication.
-2. Activar Email/Password.
-3. Revisar si quieres confirmacion por correo.
-4. Agregar el dominio publicado en URL Configuration cuando ya tengas el link final.
+2. Crear tu usuario con correo y password.
+3. Confirmarlo si Supabase lo requiere.
 
 
-PASO 3: Subir a GitHub
+PASO 3: Darte permiso Super Admin
+
+En SQL Editor, ejecuta esto cambiando el correo:
+
+insert into public.app_admins (user_id, email)
+select id, email
+from auth.users
+where lower(email) = lower('TU_CORREO_AQUI')
+on conflict (user_id) do update set email = excluded.email;
+
+
+PASO 4: Crear usuarios de clientes
+
+En Supabase Authentication:
+1. Crear usuario con correo del cliente.
+2. Crear password temporal.
+3. Entregar ese acceso al cliente.
+
+
+12. COMO PUBLICAR EN VERCEL
+
+PASO 1: Subir a GitHub
 
 1. Crear repositorio en GitHub.
 2. Subir la carpeta:
@@ -172,17 +216,16 @@ C:\Users\Alexander\Documents\invguard
 No subir node_modules.
 
 
-PASO 4: Publicar en Vercel
+PASO 2: Publicar en Vercel
 
 1. Entrar a https://vercel.com
-2. Crear cuenta o iniciar sesion.
-3. Importar el repositorio de GitHub.
-4. Configurar:
+2. Importar el repositorio de GitHub.
+3. Configurar:
    - Build command: npm run build
    - Output directory: dist
 
 
-PASO 5: Variables de entorno en Vercel
+PASO 3: Variables de entorno en Vercel
 
 Agregar estas variables:
 
@@ -195,35 +238,41 @@ Estas variables estan en Supabase:
 - API.
 
 
-PASO 6: Probar la app publicada
+13. PRUEBA ANTES DE COMPARTIR
 
-1. Abrir el link de Vercel.
-2. Crear una cuenta nueva.
-3. Crear un producto.
-4. Registrar una entrada.
-5. Registrar una salida.
-6. Revisar dashboard.
-7. Entrar a Admin.
-8. Crear invitacion para otro usuario.
+1. Ejecutar multi_tenant.sql.
+2. Crear tu usuario principal en Supabase Auth.
+3. Agregarte a app_admins.
+4. Entrar a InvGuard.
+5. Crear un usuario cliente en Supabase Auth.
+6. Crear un negocio desde Admin.
+7. Asignar el correo del cliente.
+8. Entrar con el cliente.
+9. Crear productos y movimientos.
+10. Crear otro negocio con otro usuario.
+11. Verificar que cada negocio solo vea su propio inventario.
 
 
-11. QUE NO DEBES HACER
+14. QUE NO DEBES HACER
 
 - No publiques la service_role key de Supabase.
 - No des acceso ADMIN a todos.
 - No borres tablas sin respaldo.
 - No uses una sola cuenta para todos los negocios.
 - No desactives RLS si la app sera publica.
+- No vuelvas a activar registro publico si quieres controlar clientes.
 
 
-12. RECOMENDACION FINAL
+15. RECOMENDACION FINAL
 
 Para lanzar a personas reales:
 
-1. Ejecuta multi_tenant.sql.
-2. Publica en Vercel.
-3. Prueba con dos cuentas diferentes.
-4. Verifica que cada cuenta solo vea sus propios productos.
-5. Luego comparte el link.
+1. Empieza con 10 a 20 negocios.
+2. Dales beta gratis por 30 dias.
+3. Ayudalos a cargar sus primeros productos.
+4. Pide feedback y testimonio.
+5. A los 25 dias pregunta si seguiran con plan pagado.
+6. Si pagan, cambia el negocio a ACTIVO.
+7. Si no pagan, cambia el negocio a SUSPENDIDO.
 
-Si eso funciona, InvGuard ya puede ser usado por muchas personas con inventarios separados.
+Si eso funciona, InvGuard ya puede venderse como servicio real.

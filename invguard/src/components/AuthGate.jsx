@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { FiBriefcase, FiLock, FiMail, FiUserPlus } from "react-icons/fi";
+import { FiLock, FiMail } from "react-icons/fi";
 
 import { supabase } from "../services/supabase";
 import { getSupabaseMessage } from "../utils/inventory";
@@ -9,11 +9,8 @@ const requireAuth = import.meta.env.VITE_REQUIRE_AUTH !== "false";
 export default function AuthGate({ children }) {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(requireAuth);
-  const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [businessName, setBusinessName] = useState("");
-  const [businessType, setBusinessType] = useState("");
   const [message, setMessage] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
@@ -39,21 +36,10 @@ export default function AuthGate({ children }) {
     setSubmitting(true);
     setMessage("");
 
-    const request =
-      mode === "login"
-        ? supabase.auth.signInWithPassword({ email, password })
-        : supabase.auth.signUp({
-            email,
-            password,
-            options: {
-              data: {
-                business_name: businessName || "Mi negocio",
-                business_type: businessType,
-              },
-            },
-          });
-
-    const { error } = await request;
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
     setSubmitting(false);
 
@@ -62,11 +48,7 @@ export default function AuthGate({ children }) {
       return;
     }
 
-    setMessage(
-      mode === "login"
-        ? "Sesion iniciada."
-        : "Usuario creado. Si Supabase pide confirmacion, revise el correo."
-    );
+    setMessage("Sesion iniciada.");
   }
 
   if (!requireAuth) return children;
@@ -89,60 +71,14 @@ export default function AuthGate({ children }) {
       >
         <div className="mb-6">
           <div className="mb-4 inline-flex rounded-lg bg-teal-500/15 p-3 text-teal-200">
-            {mode === "login" ? (
-              <FiLock className="h-6 w-6" />
-            ) : (
-              <FiUserPlus className="h-6 w-6" />
-            )}
+            <FiLock className="h-6 w-6" />
           </div>
-          <h1 className="text-2xl font-semibold">
-            {mode === "login" ? "Ingresar a InvGuard" : "Crear usuario"}
-          </h1>
+          <h1 className="text-2xl font-semibold">Ingresar a InvGuard</h1>
           <p className="mt-2 text-sm text-neutral-400">
-            Crea tu cuenta y tus datos quedaran separados de otros negocios.
+            Acceso privado. El administrador crea tu cuenta y asigna tu
+            negocio.
           </p>
         </div>
-
-        {mode === "signup" && (
-          <div className="mb-3 grid gap-3">
-            <label className="block">
-              <span className="mb-1 block text-sm text-neutral-400">
-                Nombre del negocio
-              </span>
-              <div className="relative">
-                <FiBriefcase className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-neutral-500" />
-                <input
-                  type="text"
-                  value={businessName}
-                  onChange={(event) => setBusinessName(event.target.value)}
-                  className="w-full rounded-lg border border-white/10 bg-neutral-950 py-2 pl-10 pr-3 text-sm"
-                  placeholder="Ej. Bodega San Jose"
-                  required
-                />
-              </div>
-            </label>
-
-            <label className="block">
-              <span className="mb-1 block text-sm text-neutral-400">
-                Rubro
-              </span>
-              <select
-                value={businessType}
-                onChange={(event) => setBusinessType(event.target.value)}
-                className="w-full rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
-              >
-                <option value="">Seleccionar</option>
-                <option value="Bodega">Bodega</option>
-                <option value="Minimarket">Minimarket</option>
-                <option value="Ferreteria">Ferreteria</option>
-                <option value="Farmacia">Farmacia</option>
-                <option value="Almacen">Almacen</option>
-                <option value="Restaurante">Restaurante</option>
-                <option value="Otro">Otro</option>
-              </select>
-            </label>
-          </div>
-        )}
 
         <label className="mb-3 block">
           <span className="mb-1 block text-sm text-neutral-400">Correo</span>
@@ -183,22 +119,13 @@ export default function AuthGate({ children }) {
           disabled={submitting}
           className="mt-5 w-full rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-teal-400"
         >
-          {submitting
-            ? "Procesando..."
-            : mode === "login"
-              ? "Ingresar"
-              : "Crear cuenta"}
+          {submitting ? "Procesando..." : "Ingresar"}
         </button>
 
-        <button
-          type="button"
-          onClick={() => setMode(mode === "login" ? "signup" : "login")}
-          className="mt-3 w-full rounded-lg border border-white/10 px-4 py-2 text-sm text-neutral-300 hover:bg-white/5"
-        >
-          {mode === "login"
-            ? "Crear usuario nuevo"
-            : "Ya tengo usuario"}
-        </button>
+        <p className="mt-4 text-center text-xs leading-5 text-neutral-500">
+          Si aun no tienes acceso, solicita tu usuario al administrador de
+          InvGuard.
+        </p>
       </form>
     </div>
   );
