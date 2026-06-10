@@ -1,0 +1,6 @@
+-- Archivo conservado solo por compatibilidad.
+-- Para la version multiusuario/SaaS usa:
+--
+--   supabase/multi_tenant.sql
+--
+-- Ese script crea empresas por usuario, membresias, RLS y movimientos seguros.

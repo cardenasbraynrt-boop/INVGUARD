@@ -1,0 +1,322 @@
+INVGUARD - MANUAL DE USO Y PUBLICACION
+
+1. QUE ES INVGUARD
+
+InvGuard es una aplicacion web para controlar inventario, movimientos, perdidas, reportes, reorden y usuarios.
+
+La app funciona como SaaS privado: cada negocio tiene sus propios productos y movimientos, separados por empresa con seguridad RLS en Supabase.
+
+
+2. COMO ENTRA UN USUARIO
+
+El registro publico esta cerrado.
+
+Flujo correcto:
+1. El administrador de InvGuard pide el correo del cliente.
+2. El administrador crea ese usuario en Supabase Auth con una password temporal.
+3. El administrador entra al panel Admin de InvGuard.
+4. Crea el negocio con beta de 30 dias.
+5. Asigna el correo del dueno.
+6. El cliente entra a InvGuard con correo y password.
+
+Si un usuario inicia sesion sin negocio asignado, vera una pantalla de acceso pendiente.
+
+
+3. SUPER ADMIN
+
+El Super Admin es tu cuenta principal.
+
+Desde el panel Admin puedes:
+- Crear negocios.
+- Asignar dueno por correo.
+- Ver todos los negocios registrados.
+- Ver fecha de vencimiento de beta.
+- Cambiar estado comercial.
+- Suspender negocios.
+- Agregar usuarios existentes por correo.
+- Cambiar roles.
+- Quitar usuarios.
+
+Estados comerciales:
+- BETA: negocio en prueba gratis por 30 dias.
+- ACTIVO: cliente que continua usando el servicio.
+- SUSPENDIDO: negocio sin acceso operativo.
+
+
+4. ROLES DEL NEGOCIO
+
+ADMIN:
+- Controla el negocio.
+- Edita datos del negocio.
+- Administra usuarios del negocio.
+- Puede administrar inventario, movimientos, perdidas y reportes.
+
+SUPERVISOR:
+- Puede revisar y operar el inventario.
+- Ideal para encargado de tienda o almacen.
+
+EMPLEADO:
+- Uso basico operativo.
+- Ideal para registrar movimientos o revisar productos.
+
+
+5. PANEL ADMIN
+
+Si entras como Super Admin, Admin muestra:
+- resumen de negocios,
+- cantidad en beta,
+- suspendidos,
+- betas por vencer,
+- formulario para crear negocio,
+- tabla de negocios con estado y vencimiento.
+
+Si entras como ADMIN de un negocio, Admin muestra:
+- datos del negocio,
+- estado comercial,
+- usuarios,
+- formulario para agregar usuario existente,
+- tabla de equipo y roles.
+
+
+6. INVENTARIO
+
+La pantalla Inventario sirve para agregar, editar, buscar y exportar productos.
+
+Campos principales:
+- Codigo.
+- Nombre.
+- Categoria.
+- Stock.
+- Stock minimo.
+- Precio compra.
+- Precio venta.
+- Lote inicial.
+- Proveedor.
+- Fecha de vencimiento.
+
+Uso recomendado:
+1. Crear categorias claras.
+2. Definir stock minimo para cada producto.
+3. Mantener precio compra y precio venta actualizados.
+4. Revisar productos con stock bajo cada dia.
+5. Si el producto vence, registrar lote y fecha de vencimiento.
+
+
+7. MOVIMIENTOS
+
+La pantalla Movimientos sirve para registrar entradas y salidas.
+
+Entrada:
+- Aumenta el stock.
+- Se usa cuando llega mercaderia.
+- Puede crear un lote con proveedor y fecha de vencimiento.
+
+Salida:
+- Reduce el stock.
+- Se usa cuando sale mercaderia por venta, retiro o ajuste.
+- Si existen lotes, InvGuard consume primero el lote que vence antes.
+
+Para registrar:
+1. Buscar producto.
+2. Seleccionar entrada o salida.
+3. Escribir cantidad.
+4. Agregar observacion si corresponde.
+5. Presionar Registrar.
+
+
+8. LOTES Y VENCIMIENTOS
+
+InvGuard maneja vencimientos por lote, no solo por producto.
+
+Ejemplo:
+
+Leche Gloria
+- Lote A: 20 unidades, vence 15/07/2026.
+- Lote B: 30 unidades, vence 20/08/2026.
+
+Esto permite:
+- saber que mercaderia vence primero,
+- vender primero lo que vence antes,
+- evitar perdidas,
+- registrar perdidas por vencimiento con historial.
+
+Alertas:
+- Vence en 30 dias.
+- Vence en 7 dias.
+- Vencido.
+
+Importante:
+InvGuard no descuenta automaticamente sin permiso. Muestra la perdida sugerida y el usuario confirma.
+
+
+9. PERDIDAS
+
+La pantalla Perdidas sirve para registrar mermas, robos, vencimientos, roturas o ajustes.
+
+Cuando registras una perdida:
+- Se guarda en movimientos como salida.
+- Se descuenta el stock.
+- Queda historial para reportes.
+
+Tambien muestra:
+- lotes vencidos,
+- cantidad sugerida de perdida,
+- boton para registrar perdida por vencimiento.
+
+
+10. ANALISIS
+
+La pantalla Analisis muestra:
+- Productos con riesgo.
+- Reorden sugerido.
+- Inversion estimada para reposicion.
+- Perdidas por categoria.
+- Alertas del negocio.
+
+
+11. HERRAMIENTAS
+
+La pantalla Herramientas incluye:
+- Pedido sugerido.
+- Copiar pedido.
+- Enviar pedido por WhatsApp.
+- Exportar reportes CSV.
+- Imprimir reporte.
+- Importar inventario por CSV.
+- Descargar respaldo JSON.
+
+Formato CSV para importar productos:
+
+codigo,nombre,categoria,stock,stock_minimo,precio_compra,precio_venta
+
+
+12. COMO ACTIVAR SUPABASE
+
+PASO 1: Ejecutar SQL
+
+1. Entrar a Supabase.
+2. Abrir tu proyecto.
+3. Ir a SQL Editor.
+4. Ejecutar el archivo:
+
+C:\Users\Alexander\Documents\invguard\supabase\multi_tenant.sql
+
+Luego ejecutar:
+
+C:\Users\Alexander\Documents\invguard\supabase\lotes_vencimientos.sql
+
+Ese archivo crea:
+- app_admins.
+- empresas.
+- empresa_usuarios.
+- invitaciones_empresa.
+- productos.
+- movimientos.
+- producto_lotes.
+- seguridad RLS.
+- funciones Super Admin.
+- funciones para movimientos y usuarios.
+- funciones para lotes, FEFO y perdidas por vencimiento.
+
+
+PASO 2: Crear tu usuario principal
+
+En Supabase:
+1. Ir a Authentication.
+2. Crear tu usuario con correo y password.
+3. Confirmarlo si Supabase lo requiere.
+
+
+PASO 3: Darte permiso Super Admin
+
+En SQL Editor, ejecuta esto cambiando el correo:
+
+insert into public.app_admins (user_id, email)
+select id, email
+from auth.users
+where lower(email) = lower('TU_CORREO_AQUI')
+on conflict (user_id) do update set email = excluded.email;
+
+
+PASO 4: Crear usuarios de clientes
+
+En Supabase Authentication:
+1. Crear usuario con correo del cliente.
+2. Crear password temporal.
+3. Entregar ese acceso al cliente.
+
+
+13. COMO PUBLICAR EN VERCEL
+
+PASO 1: Subir a GitHub
+
+1. Crear repositorio en GitHub.
+2. Subir la carpeta:
+
+C:\Users\Alexander\Documents\invguard
+
+No subir node_modules.
+
+
+PASO 2: Publicar en Vercel
+
+1. Entrar a https://vercel.com
+2. Importar el repositorio de GitHub.
+3. Configurar:
+   - Build command: npm run build
+   - Output directory: dist
+
+
+PASO 3: Variables de entorno en Vercel
+
+Agregar estas variables:
+
+VITE_SUPABASE_URL=tu_url_de_supabase
+VITE_SUPABASE_ANON_KEY=tu_anon_key_de_supabase
+VITE_REQUIRE_AUTH=true
+
+Estas variables estan en Supabase:
+- Project Settings.
+- API.
+
+
+14. PRUEBA ANTES DE COMPARTIR
+
+1. Ejecutar multi_tenant.sql.
+2. Crear tu usuario principal en Supabase Auth.
+3. Agregarte a app_admins.
+4. Entrar a InvGuard.
+5. Crear un usuario cliente en Supabase Auth.
+6. Crear un negocio desde Admin.
+7. Asignar el correo del cliente.
+8. Entrar con el cliente.
+9. Crear productos y movimientos.
+10. Crear una entrada con lote y fecha de vencimiento.
+11. Revisar alertas en Dashboard, Inventario y Perdidas.
+12. Crear otro negocio con otro usuario.
+13. Verificar que cada negocio solo vea su propio inventario.
+
+
+15. QUE NO DEBES HACER
+
+- No publiques la service_role key de Supabase.
+- No des acceso ADMIN a todos.
+- No borres tablas sin respaldo.
+- No uses una sola cuenta para todos los negocios.
+- No desactives RLS si la app sera publica.
+- No vuelvas a activar registro publico si quieres controlar clientes.
+
+
+16. RECOMENDACION FINAL
+
+Para lanzar a personas reales:
+
+1. Empieza con 10 a 20 negocios.
+2. Dales beta gratis por 30 dias.
+3. Ayudalos a cargar sus primeros productos.
+4. Pide feedback y testimonio.
+5. A los 25 dias pregunta si seguiran con plan pagado.
+6. Si pagan, cambia el negocio a ACTIVO.
+7. Si no pagan, cambia el negocio a SUSPENDIDO.
+
+Si eso funciona, InvGuard ya puede venderse como servicio real.
