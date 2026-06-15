@@ -18,7 +18,7 @@ function LoadingScreen() {
   return (
     <div className="grid min-h-[55vh] place-items-center p-8">
       <div className="rounded-lg border border-white/10 bg-neutral-900 px-4 py-3 text-sm text-neutral-300">
-        Cargando modulo...
+        Preparando tu inventario...
       </div>
     </div>
   );
@@ -31,14 +31,13 @@ function SetupRequired() {
     <div className="grid min-h-[70vh] place-items-center p-6">
       <div className="max-w-2xl rounded-lg border border-amber-400/30 bg-amber-400/10 p-6 text-amber-50">
         <h1 className="text-2xl font-semibold">
-          Falta activar la base multiusuario
+          Falta activar la base para clientes
         </h1>
         <p className="mt-3 text-sm leading-6 text-amber-100/90">
-          La app ya esta lista para cuentas y datos privados, pero primero
-          debes ejecutar el SQL de Supabase en{" "}
+          InvGuard ya esta listo para datos privados por negocio, pero falta
+          ejecutar el SQL de Supabase en{" "}
           <span className="font-semibold">supabase/multi_tenant.sql</span>.
-          Eso crea empresas por usuario, permisos RLS y la funcion segura de
-          movimientos.
+          Eso activa negocios, usuarios, permisos y movimientos seguros.
         </p>
         {error && (
           <p className="mt-4 rounded-lg border border-white/10 bg-neutral-950/40 p-3 text-sm">
@@ -50,7 +49,7 @@ function SetupRequired() {
           onClick={reloadTenant}
           className="mt-5 rounded-lg bg-amber-300 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-amber-200"
         >
-          Ya ejecute el SQL, reintentar
+          Ya active la base, reintentar
         </button>
       </div>
     </div>
@@ -65,8 +64,8 @@ function AccessBlocked() {
       <div className="max-w-xl rounded-lg border border-white/10 bg-neutral-900 p-6 text-neutral-100">
         <h1 className="text-2xl font-semibold">Acceso pendiente</h1>
         <p className="mt-3 text-sm leading-6 text-neutral-400">
-          Tu usuario existe, pero aun no fue asignado a ningun negocio. Pide al
-          administrador de InvGuard que cree o conecte tu negocio.
+          Tu cuenta existe, pero todavia no esta conectada a un negocio.
+          Pide al administrador de InvGuard que te asigne acceso.
         </p>
         {error && (
           <p className="mt-4 rounded-lg border border-white/10 bg-white/5 p-3 text-sm">

@@ -13,17 +13,23 @@ import {
 import { Bar, Line } from "react-chartjs-2";
 import {
   FiAlertTriangle,
+  FiCalendar,
   FiCpu,
   FiDownload,
+  FiPackage,
   FiRefreshCw,
   FiShield,
 } from "react-icons/fi";
 
+import EmptyState from "../components/EmptyState";
 import { useTenant } from "../context/TenantContext";
+import { fetchActiveProducts } from "../services/productQueries";
 import { supabase } from "../services/supabase";
 import {
   downloadCsv,
+  formatDateOnly,
   groupByCategory,
+  getExpiryState,
   getProductName,
   getSupabaseMessage,
   money,
@@ -85,24 +91,37 @@ export default function IA() {
   const { empresaId } = useTenant();
   const [productos, setProductos] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
+  const [lotes, setLotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
   async function cargarAnalisis() {
+    if (!empresaId) {
+      setProductos([]);
+      setMovimientos([]);
+      setLotes([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError("");
 
-    const [productosResult, movimientosResult] = await Promise.all([
-      supabase
-        .from("productos")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("nombre"),
+    const [productosResult, movimientosResult, lotesResult] = await Promise.all([
+      fetchActiveProducts(empresaId),
       supabase
         .from("movimientos")
-        .select("*, productos(nombre, codigo, precio_compra, precio_venta)")
+        .select("id,empresa_id,producto_id,tipo,cantidad,observacion,created_at, productos(nombre, codigo, precio_compra, precio_venta)")
         .eq("empresa_id", empresaId)
-        .order("created_at", { ascending: false }),
+        .order("created_at", { ascending: false })
+        .limit(1000),
+      supabase
+        .from("producto_lotes")
+        .select("id,empresa_id,producto_id,codigo_lote,proveedor,fecha_ingreso,fecha_vencimiento,cantidad_inicial,cantidad_actual,created_at, productos(nombre, codigo, precio_compra, precio_venta, stock)")
+        .eq("empresa_id", empresaId)
+        .gt("cantidad_actual", 0)
+        .order("fecha_vencimiento", { ascending: true })
+        .limit(1000),
     ]);
 
     if (productosResult.error || movimientosResult.error) {
@@ -117,12 +136,13 @@ export default function IA() {
 
     setProductos(productosResult.data || []);
     setMovimientos(movimientosResult.data || []);
+    setLotes(lotesResult.error ? [] : lotesResult.data || []);
     setLoading(false);
   }
 
   useEffect(() => {
     cargarAnalisis();
-  }, []);
+  }, [empresaId]);
 
   const analysis = useMemo(() => {
     const lowStock = productos
@@ -172,6 +192,16 @@ export default function IA() {
       (a, b) => b.costo - a.costo
     );
 
+    const expiredLots = lotes.filter((lote) => {
+      const state = getExpiryState(lote);
+      return state.days !== null && state.days < 0;
+    });
+
+    const expiringLots = lotes.filter((lote) => {
+      const state = getExpiryState(lote);
+      return state.days !== null && state.days >= 0 && state.days <= 30;
+    });
+
     const insights = [];
 
     if (lowStock.length) {
@@ -179,6 +209,22 @@ export default function IA() {
         level: "alta",
         title: "Reposicion necesaria",
         body: `${lowStock.length} productos estan en stock bajo o sin stock.`,
+      });
+    }
+
+    if (expiredLots.length) {
+      insights.push({
+        level: "alta",
+        title: "Vencidos por confirmar",
+        body: `${expiredLots.length} lotes vencidos necesitan revision en Perdidas.`,
+      });
+    }
+
+    if (expiringLots.length) {
+      insights.push({
+        level: "media",
+        title: "Vencimientos cercanos",
+        body: `${expiringLots.length} lotes vencen dentro de 30 dias. Prioriza su venta o revision.`,
       });
     }
 
@@ -190,7 +236,12 @@ export default function IA() {
       });
     }
 
-    if (!lowStock.length && !riskyProducts.length) {
+    if (
+      !lowStock.length &&
+      !riskyProducts.length &&
+      !expiredLots.length &&
+      !expiringLots.length
+    ) {
       insights.push({
         level: "baja",
         title: "Operacion estable",
@@ -201,6 +252,8 @@ export default function IA() {
     return {
       lowStock,
       riskyProducts,
+      expiredLots,
+      expiringLots,
       insights,
       categories: Array.from(
         groupByCategory(productos, movimientos).values()
@@ -210,7 +263,7 @@ export default function IA() {
         0
       ),
     };
-  }, [productos, movimientos]);
+  }, [productos, movimientos, lotes]);
 
   function exportarSugerencias() {
     downloadCsv(
@@ -260,13 +313,14 @@ export default function IA() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-sm font-medium text-teal-300">
-            Motor de recomendaciones
+            Prioridades del negocio
           </p>
           <h1 className="mt-1 text-3xl font-semibold">
-            Analisis inteligente
+            Recomendaciones
           </h1>
           <p className="mt-2 text-sm text-neutral-400">
-            Alertas operativas calculadas desde inventario y movimientos.
+            InvGuard revisa stock, perdidas y vencimientos para decirte que
+            atender primero.
           </p>
         </div>
 
@@ -298,7 +352,7 @@ export default function IA() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
           <div className="flex items-center justify-between gap-4">
             <p className="text-sm text-neutral-400">Alertas</p>
@@ -310,11 +364,22 @@ export default function IA() {
         </div>
         <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
           <div className="flex items-center justify-between gap-4">
-            <p className="text-sm text-neutral-400">Reordenes</p>
+            <p className="text-sm text-neutral-400">Comprar pronto</p>
             <FiCpu className="h-5 w-5 text-teal-300" />
           </div>
           <p className="mt-2 text-3xl font-semibold">
             {numberFormat.format(analysis.lowStock.length)}
+          </p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-sm text-neutral-400">Vencimientos</p>
+            <FiCalendar className="h-5 w-5 text-sky-300" />
+          </div>
+          <p className="mt-2 text-3xl font-semibold">
+            {numberFormat.format(
+              analysis.expiredLots.length + analysis.expiringLots.length
+            )}
           </p>
         </div>
         <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
@@ -417,15 +482,93 @@ export default function IA() {
                   <tr>
                     <td
                       colSpan="5"
-                      className="px-5 py-8 text-center text-neutral-400"
+                      className="px-0 py-0"
                     >
-                      No hay compras sugeridas.
+                      <EmptyState
+                        icon={FiShield}
+                        title="No hay compras sugeridas"
+                        body="El stock esta por encima del minimo que configuraste."
+                      />
                     </td>
                   </tr>
                 )}
               </tbody>
             </table>
           </div>
+        </div>
+      </div>
+
+      <div className="rounded-lg border border-white/10 bg-neutral-900">
+        <div className="border-b border-white/10 p-5">
+          <h2 className="text-lg font-semibold">Vencimientos a revisar</h2>
+          <p className="mt-1 text-sm text-neutral-400">
+            Productos que conviene vender primero, separar o registrar como
+            perdida si ya vencieron.
+          </p>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[760px] text-sm">
+            <thead className="bg-white/[0.03] text-left text-neutral-400">
+              <tr>
+                <th className="px-5 py-3 font-medium">Producto</th>
+                <th className="px-5 py-3 font-medium">Lote</th>
+                <th className="px-5 py-3 font-medium">Cantidad</th>
+                <th className="px-5 py-3 font-medium">Fecha</th>
+                <th className="px-5 py-3 font-medium">Estado</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/10">
+              {[...analysis.expiredLots, ...analysis.expiringLots]
+                .slice(0, 8)
+                .map((lote) => {
+                  const state = getExpiryState(lote);
+
+                  return (
+                    <tr key={lote.id}>
+                      <td className="px-5 py-3">
+                        <p className="font-medium">
+                          {lote.productos?.nombre || "Producto"}
+                        </p>
+                        <p className="text-xs text-neutral-500">
+                          {lote.productos?.codigo || "Sin codigo"}
+                        </p>
+                      </td>
+                      <td className="px-5 py-3 text-neutral-300">
+                        {lote.codigo_lote || "-"}
+                      </td>
+                      <td className="px-5 py-3">
+                        {numberFormat.format(lote.cantidad_actual)}
+                      </td>
+                      <td className="px-5 py-3 text-neutral-300">
+                        {formatDateOnly(lote.fecha_vencimiento)}
+                      </td>
+                      <td className="px-5 py-3">
+                        <span
+                          className={`rounded-full border px-2.5 py-1 text-xs ${state.className}`}
+                        >
+                          {state.label}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+
+              {!loading &&
+                analysis.expiredLots.length + analysis.expiringLots.length ===
+                  0 && (
+                  <tr>
+                    <td colSpan="5" className="px-0 py-0">
+                      <EmptyState
+                        icon={FiPackage}
+                        title="No hay vencimientos cercanos"
+                        body="Cuando un lote este por vencer, aparecera aqui con prioridad."
+                      />
+                    </td>
+                  </tr>
+                )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -464,9 +607,13 @@ export default function IA() {
                 <tr>
                   <td
                     colSpan="4"
-                    className="px-5 py-8 text-center text-neutral-400"
+                    className="px-0 py-0"
                   >
-                    No hay productos con perdidas registradas.
+                    <EmptyState
+                      icon={FiPackage}
+                      title="No hay productos con perdidas registradas"
+                      body="Cuando registres perdidas, aqui veras que productos generan mas costo."
+                    />
                   </td>
                 </tr>
               )}

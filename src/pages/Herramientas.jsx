@@ -4,21 +4,31 @@ import {
   FiDatabase,
   FiDownload,
   FiFileText,
+  FiPackage,
   FiPrinter,
   FiRefreshCw,
   FiSend,
   FiUpload,
 } from "react-icons/fi";
 
+import EmptyState from "../components/EmptyState";
 import { useTenant } from "../context/TenantContext";
+import {
+  fetchActiveProducts,
+  isMissingHardening,
+} from "../services/productQueries";
 import { supabase } from "../services/supabase";
 import {
   buildWhatsAppUrl,
+  cleanText,
   downloadCsv,
   formatDate,
+  generateProductCode,
+  getCategoryOptions,
   getReorderList,
   getSupabaseMessage,
   money,
+  normalizeCategoryName,
   numberFormat,
   parseCsv,
   toNumber,
@@ -30,6 +40,8 @@ const businessDefaults = {
   proveedor: "",
 };
 
+const requireAuth = import.meta.env.VITE_REQUIRE_AUTH !== "false";
+
 function readFile(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -40,9 +52,10 @@ function readFile(file) {
 }
 
 export default function Herramientas() {
-  const { empresaId, empresa } = useTenant();
+  const { empresaId, empresa, isSuperAdmin, membership, user } = useTenant();
   const [productos, setProductos] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
+  const [lotes, setLotes] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [importing, setImporting] = useState(false);
@@ -51,21 +64,37 @@ export default function Herramientas() {
     return saved ? JSON.parse(saved) : businessDefaults;
   });
 
+  const canImportProducts =
+    !requireAuth ||
+    isSuperAdmin ||
+    ["ADMIN", "SUPERVISOR"].includes(membership?.rol);
+
   async function cargarDatos() {
+    if (!empresaId) {
+      setProductos([]);
+      setMovimientos([]);
+      setLotes([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError("");
 
-    const [productosResult, movimientosResult] = await Promise.all([
-      supabase
-        .from("productos")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("nombre"),
+    const [productosResult, movimientosResult, lotesResult] = await Promise.all([
+      fetchActiveProducts(empresaId),
       supabase
         .from("movimientos")
-        .select("*, productos(nombre, codigo, precio_compra, precio_venta)")
+        .select("id,empresa_id,producto_id,tipo,cantidad,observacion,created_at, productos(nombre, codigo, precio_compra, precio_venta)")
         .eq("empresa_id", empresaId)
-        .order("created_at", { ascending: false }),
+        .order("created_at", { ascending: false })
+        .limit(2000),
+      supabase
+        .from("producto_lotes")
+        .select("id,empresa_id,producto_id,codigo_lote,proveedor,fecha_ingreso,fecha_vencimiento,cantidad_inicial,cantidad_actual,created_at")
+        .eq("empresa_id", empresaId)
+        .order("fecha_vencimiento", { ascending: true })
+        .limit(2000),
     ]);
 
     if (productosResult.error || movimientosResult.error) {
@@ -80,12 +109,13 @@ export default function Herramientas() {
 
     setProductos(productosResult.data || []);
     setMovimientos(movimientosResult.data || []);
+    setLotes(lotesResult.error ? [] : lotesResult.data || []);
     setLoading(false);
   }
 
   useEffect(() => {
     cargarDatos();
-  }, []);
+  }, [empresaId]);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -93,6 +123,11 @@ export default function Herramientas() {
       JSON.stringify(business)
     );
   }, [business]);
+
+  const categoryOptions = useMemo(
+    () => getCategoryOptions(productos),
+    [productos]
+  );
 
   const reorden = useMemo(() => getReorderList(productos), [productos]);
 
@@ -144,6 +179,7 @@ export default function Herramientas() {
       empresa_id: empresaId,
       productos,
       movimientos,
+      lotes,
     };
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], {
@@ -172,6 +208,12 @@ export default function Herramientas() {
   }
 
   async function importarCsv(event) {
+    if (!canImportProducts) {
+      alert("Tu rol puede ver reportes, pero no importar productos.");
+      event.target.value = "";
+      return;
+    }
+
     const file = event.target.files?.[0];
     if (!file) return;
 
@@ -180,18 +222,50 @@ export default function Herramientas() {
     try {
       const text = await readFile(file);
       const rows = parseCsv(text);
+      const existingCodes = new Set(
+        productos
+          .map((product) => String(product.codigo || "").toLowerCase())
+          .filter(Boolean)
+      );
+      const importCodes = new Set();
       const payload = rows
-        .filter((row) => row.nombre)
-        .map((row) => ({
-          empresa_id: empresaId,
-          codigo: row.codigo || "",
-          nombre: row.nombre,
-          categoria: row.categoria || "",
-          stock: toNumber(row.stock),
-          stock_minimo: toNumber(row.stock_minimo),
-          precio_compra: toNumber(row.precio_compra),
-          precio_venta: toNumber(row.precio_venta),
-        }));
+        .filter((row) => cleanText(row.nombre))
+        .reduce((items, row) => {
+          const categoria = normalizeCategoryName(row.categoria, categoryOptions);
+          const nombre = cleanText(row.nombre);
+          const codigo =
+            cleanText(row.codigo) ||
+            generateProductCode({
+              productos: [...productos, ...items],
+              categoria,
+              nombre,
+            });
+          const normalizedCode = codigo.toLowerCase();
+
+          if (existingCodes.has(normalizedCode) || importCodes.has(normalizedCode)) {
+            throw new Error(
+              `Codigo duplicado en importacion: ${codigo}. Corrigelo o deja el codigo vacio para generarlo automaticamente.`
+            );
+          }
+
+          importCodes.add(normalizedCode);
+
+          items.push({
+            empresa_id: empresaId,
+            codigo,
+            nombre,
+            categoria,
+            stock: toNumber(row.stock),
+            stock_minimo: toNumber(row.stock_minimo),
+            precio_compra: toNumber(row.precio_compra),
+            precio_venta: toNumber(row.precio_venta),
+            activo: true,
+            created_by: user?.id || null,
+            updated_by: user?.id || null,
+          });
+
+          return items;
+        }, []);
 
       if (!payload.length) {
         alert("No se encontraron productos validos.");
@@ -204,7 +278,11 @@ export default function Herramientas() {
         .insert(payload);
 
       if (importError) {
-        alert(getSupabaseMessage(importError));
+        alert(
+          isMissingHardening(importError)
+            ? "Falta ejecutar supabase/hardening.sql para importar con auditoria y permisos avanzados."
+            : getSupabaseMessage(importError)
+        );
         setImporting(false);
         return;
       }
@@ -224,11 +302,12 @@ export default function Herramientas() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-sm font-medium text-teal-300">
-            Operacion comercial
+            Reportes y compras
           </p>
-          <h1 className="mt-1 text-3xl font-semibold">Herramientas</h1>
+          <h1 className="mt-1 text-3xl font-semibold">Reportes</h1>
           <p className="mt-2 text-sm text-neutral-400">
-            Reportes, reorden, respaldo e importacion para comercios locales.
+            Exporta movimientos, prepara pedidos de compra y guarda un respaldo
+            de productos, movimientos y lotes.
           </p>
         </div>
 
@@ -257,13 +336,13 @@ export default function Herramientas() {
           </p>
         </div>
         <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
-          <p className="text-sm text-neutral-400">Salida acumulada</p>
+          <p className="text-sm text-neutral-400">Salidas registradas</p>
           <p className="mt-2 text-3xl font-semibold">
             {numberFormat.format(ventasSalidas)}
           </p>
         </div>
         <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
-          <p className="text-sm text-neutral-400">Reorden estimado</p>
+          <p className="text-sm text-neutral-400">Compra sugerida</p>
           <p className="mt-2 text-3xl font-semibold text-emerald-200">
             {money.format(inversionReorden)}
           </p>
@@ -336,12 +415,18 @@ export default function Herramientas() {
             </div>
           </div>
 
-          <div className="mt-4 max-h-72 overflow-auto rounded-lg border border-white/10 bg-neutral-950 p-4">
-            <pre className="whitespace-pre-wrap text-sm leading-6 text-neutral-300">
-              {reorden.length
-                ? pedidoTexto
-                : "No hay productos bajo el punto minimo."}
-            </pre>
+          <div className="mt-4 max-h-72 overflow-auto rounded-lg border border-white/10 bg-neutral-950">
+            {reorden.length ? (
+              <pre className="whitespace-pre-wrap p-4 text-sm leading-6 text-neutral-300">
+                {pedidoTexto}
+              </pre>
+            ) : (
+              <EmptyState
+                icon={FiPackage}
+                title="No hay productos para pedir"
+                body="El pedido sugerido aparece cuando algun producto esta en stock minimo o por debajo."
+              />
+            )}
           </div>
         </div>
       </div>
@@ -390,7 +475,7 @@ export default function Herramientas() {
               accept=".csv,text/csv"
               onChange={importarCsv}
               className="hidden"
-              disabled={importing}
+              disabled={importing || !canImportProducts}
             />
           </label>
           <p className="mt-4 text-sm text-neutral-400">
@@ -413,7 +498,7 @@ export default function Herramientas() {
             Descargar JSON
           </button>
           <p className="mt-4 text-sm text-neutral-400">
-            Incluye productos y movimientos actuales.
+            Incluye productos, movimientos y lotes con vencimiento.
           </p>
         </div>
       </div>

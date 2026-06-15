@@ -10,6 +10,78 @@ export function toNumber(value) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+export function cleanText(value) {
+  return String(value || "").trim().replace(/\s+/g, " ");
+}
+
+export function toTitleCase(value) {
+  return cleanText(value)
+    .toLocaleLowerCase("es-PE")
+    .replace(/(^|\s)(\S)/g, (match) => match.toLocaleUpperCase("es-PE"));
+}
+
+export function getCategoryOptions(productos = []) {
+  const map = new Map();
+
+  productos.forEach((product) => {
+    const category = toTitleCase(product.categoria);
+    if (!category) return;
+    map.set(category.toLocaleLowerCase("es-PE"), category);
+  });
+
+  return Array.from(map.values()).sort((a, b) =>
+    a.localeCompare(b, "es-PE")
+  );
+}
+
+export function normalizeCategoryName(value, existingCategories = []) {
+  const category = toTitleCase(value);
+  const match = existingCategories.find(
+    (item) =>
+      item.toLocaleLowerCase("es-PE") ===
+      category.toLocaleLowerCase("es-PE")
+  );
+
+  return match || category;
+}
+
+function buildCodePrefix(value) {
+  const clean = cleanText(value)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toLocaleUpperCase("es-PE");
+
+  return (clean || "PRO").slice(0, 3).padEnd(3, "X");
+}
+
+export function generateProductCode({ productos = [], categoria = "", nombre = "" }) {
+  const prefix = buildCodePrefix(categoria || nombre);
+  const usedCodes = new Set(
+    productos
+      .map((product) => String(product.codigo || "").toLocaleUpperCase("es-PE"))
+      .filter(Boolean)
+  );
+  const numbers = productos
+    .map((product) => {
+      const match = String(product.codigo || "")
+        .toLocaleUpperCase("es-PE")
+        .match(new RegExp(`^${prefix}-(\\d+)$`));
+      return match ? Number(match[1]) : 0;
+    })
+    .filter(Boolean);
+
+  let next = Math.max(0, ...numbers) + 1;
+  let code = `${prefix}-${String(next).padStart(4, "0")}`;
+
+  while (usedCodes.has(code)) {
+    next += 1;
+    code = `${prefix}-${String(next).padStart(4, "0")}`;
+  }
+
+  return code;
+}
+
 export function formatDate(value) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("es-PE", {
@@ -196,10 +268,43 @@ export function downloadCsv(filename, rows) {
 }
 
 export function getSupabaseMessage(error) {
+  const message = String(error?.message || "").toLowerCase();
+
+  if (message.includes("invalid login credentials")) {
+    return "Correo o contrasena incorrectos. Revisa los datos que te dio el administrador.";
+  }
+
+  if (message.includes("failed to fetch") || message.includes("network")) {
+    return "No se pudo conectar con la base de datos. Revisa internet y vuelve a intentar.";
+  }
+
+  if (message.includes("invalid path specified")) {
+    return "La conexion con Supabase no esta usando una ruta valida. Revisa las variables de entorno.";
+  }
+
+  if (message.includes("jwt")) {
+    return "Tu sesion vencio. Cierra sesion y vuelve a entrar.";
+  }
+
   return (
     error?.message ||
-    "No se pudo completar la operacion. Revise la conexion o permisos."
+    "No se pudo completar la accion. Revisa la conexion o permisos."
   );
+}
+
+export function getTrialText(empresa) {
+  if (!empresa?.trial_ends_at || empresa?.estado !== "BETA") {
+    return empresa?.estado === "ACTIVO"
+      ? "Plan activo"
+      : empresa?.estado || "Acceso activo";
+  }
+
+  const left = daysUntil(empresa.trial_ends_at);
+
+  if (left === null) return "Beta activa";
+  if (left < 0) return "Beta vencida";
+  if (left === 0) return "Beta vence hoy";
+  return `Beta: ${left} dias`;
 }
 
 export function groupByCategory(productos = [], movimientos = []) {
@@ -259,21 +364,55 @@ export function getReorderList(productos = []) {
 }
 
 export function parseCsv(text) {
-  const rows = text
-    .split(/\r?\n/)
-    .map((row) => row.trim())
-    .filter(Boolean);
+  const rows = [];
+  let current = [];
+  let cell = "";
+  let inQuotes = false;
+
+  String(text || "").replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("").forEach((char, index, chars) => {
+    const next = chars[index + 1];
+
+    if (char === '"' && inQuotes && next === '"') {
+      cell += '"';
+      return;
+    }
+
+    if (char === '"' && chars[index - 1] === '"' && inQuotes) {
+      return;
+    }
+
+    if (char === '"') {
+      inQuotes = !inQuotes;
+      return;
+    }
+
+    if (char === "," && !inQuotes) {
+      current.push(cell.trim());
+      cell = "";
+      return;
+    }
+
+    if (char === "\n" && !inQuotes) {
+      current.push(cell.trim());
+      if (current.some(Boolean)) rows.push(current);
+      current = [];
+      cell = "";
+      return;
+    }
+
+    cell += char;
+  });
+
+  current.push(cell.trim());
+  if (current.some(Boolean)) rows.push(current);
 
   if (rows.length < 2) return [];
 
-  const headers = rows[0]
-    .split(",")
-    .map((header) => header.trim().toLowerCase());
+  const headers = rows[0].map((header) => header.trim().toLowerCase());
 
   return rows.slice(1).map((row) => {
-    const cells = row.split(",").map((cell) => cell.trim());
     return headers.reduce((record, header, index) => {
-      record[header] = cells[index] || "";
+      record[header] = row[index] || "";
       return record;
     }, {});
   });

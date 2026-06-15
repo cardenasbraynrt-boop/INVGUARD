@@ -2,7 +2,7 @@ INVGUARD - MANUAL DE USO Y PUBLICACION
 
 1. QUE ES INVGUARD
 
-InvGuard es una aplicacion web para controlar inventario, movimientos, perdidas, reportes, reorden y usuarios.
+InvGuard es una aplicacion web para controlar inventario, entradas, salidas, perdidas, reportes, reorden y usuarios.
 
 La app funciona como SaaS privado: cada negocio tiene sus propios productos y movimientos, separados por empresa con seguridad RLS en Supabase.
 
@@ -14,7 +14,7 @@ El registro publico esta cerrado.
 Flujo correcto:
 1. El administrador de InvGuard pide el correo del cliente.
 2. El administrador crea ese usuario en Supabase Auth con una password temporal.
-3. El administrador entra al panel Admin de InvGuard.
+3. El administrador entra al panel Clientes y accesos de InvGuard.
 4. Crea el negocio con beta de 30 dias.
 5. Asigna el correo del dueno.
 6. El cliente entra a InvGuard con correo y password.
@@ -26,7 +26,7 @@ Si un usuario inicia sesion sin negocio asignado, vera una pantalla de acceso pe
 
 El Super Admin es tu cuenta principal.
 
-Desde el panel Admin puedes:
+Desde el panel Clientes y accesos puedes:
 - Crear negocios.
 - Asignar dueno por correo.
 - Ver todos los negocios registrados.
@@ -60,9 +60,9 @@ EMPLEADO:
 - Ideal para registrar movimientos o revisar productos.
 
 
-5. PANEL ADMIN
+5. CLIENTES Y ACCESOS / MI NEGOCIO
 
-Si entras como Super Admin, Admin muestra:
+Si entras como Super Admin, Clientes y accesos muestra:
 - resumen de negocios,
 - cantidad en beta,
 - suspendidos,
@@ -70,7 +70,7 @@ Si entras como Super Admin, Admin muestra:
 - formulario para crear negocio,
 - tabla de negocios con estado y vencimiento.
 
-Si entras como ADMIN de un negocio, Admin muestra:
+Si entras como ADMIN de un negocio, Mi negocio muestra:
 - datos del negocio,
 - estado comercial,
 - usuarios,
@@ -83,7 +83,7 @@ Si entras como ADMIN de un negocio, Admin muestra:
 La pantalla Inventario sirve para agregar, editar, buscar y exportar productos.
 
 Campos principales:
-- Codigo.
+- Codigo automatico.
 - Nombre.
 - Categoria.
 - Stock.
@@ -101,10 +101,22 @@ Uso recomendado:
 4. Revisar productos con stock bajo cada dia.
 5. Si el producto vence, registrar lote y fecha de vencimiento.
 
+El codigo se genera automaticamente al guardar el producto. La categoria se elige de una lista para evitar duplicados como "Bebida", "bebida" o "Bebidas ".
 
-7. MOVIMIENTOS
+Filtros rapidos:
+- Todos.
+- Sin stock.
+- Stock bajo.
+- Por vencer.
+- Vencidos.
+- Sin lote.
 
-La pantalla Movimientos sirve para registrar entradas y salidas.
+Estos filtros ayudan a encontrar problemas sin escribir busquedas manuales.
+
+
+7. ENTRADAS Y SALIDAS
+
+La pantalla Entradas y salidas sirve para registrar cuando el stock aumenta o disminuye.
 
 Entrada:
 - Aumenta el stock.
@@ -115,13 +127,14 @@ Salida:
 - Reduce el stock.
 - Se usa cuando sale mercaderia por venta, retiro o ajuste.
 - Si existen lotes, InvGuard consume primero el lote que vence antes.
+- InvGuard avisa si intentas sacar mas unidades que el stock disponible.
 
 Para registrar:
 1. Buscar producto.
 2. Seleccionar entrada o salida.
 3. Escribir cantidad.
 4. Agregar observacion si corresponde.
-5. Presionar Registrar.
+5. Presionar Guardar.
 
 
 8. LOTES Y VENCIMIENTOS
@@ -157,6 +170,7 @@ Cuando registras una perdida:
 - Se guarda en movimientos como salida.
 - Se descuenta el stock.
 - Queda historial para reportes.
+- InvGuard avisa si intentas registrar una perdida mayor al stock disponible.
 
 Tambien muestra:
 - lotes vencidos,
@@ -164,19 +178,22 @@ Tambien muestra:
 - boton para registrar perdida por vencimiento.
 
 
-10. ANALISIS
+10. RECOMENDACIONES
 
-La pantalla Analisis muestra:
+La pantalla Recomendaciones muestra:
 - Productos con riesgo.
 - Reorden sugerido.
 - Inversion estimada para reposicion.
 - Perdidas por categoria.
 - Alertas del negocio.
+- Vencimientos a revisar.
+
+La pantalla Inicio tambien muestra dinero en riesgo por lotes vencidos o proximos a vencer.
 
 
-11. HERRAMIENTAS
+11. REPORTES
 
-La pantalla Herramientas incluye:
+La pantalla Reportes incluye:
 - Pedido sugerido.
 - Copiar pedido.
 - Enviar pedido por WhatsApp.
@@ -188,6 +205,8 @@ La pantalla Herramientas incluye:
 Formato CSV para importar productos:
 
 codigo,nombre,categoria,stock,stock_minimo,precio_compra,precio_venta
+
+La columna codigo puede ir vacia. InvGuard genera un codigo automatico al importar.
 
 
 12. COMO ACTIVAR SUPABASE
@@ -205,6 +224,10 @@ Luego ejecutar:
 
 C:\Users\Alexander\Documents\invguard\supabase\lotes_vencimientos.sql
 
+Finalmente ejecutar:
+
+C:\Users\Alexander\Documents\invguard\supabase\hardening.sql
+
 Ese archivo crea:
 - app_admins.
 - empresas.
@@ -213,10 +236,15 @@ Ese archivo crea:
 - productos.
 - movimientos.
 - producto_lotes.
+- categorias.
+- audit_logs.
 - seguridad RLS.
 - funciones Super Admin.
 - funciones para movimientos y usuarios.
 - funciones para lotes, FEFO y perdidas por vencimiento.
+- auditoria de acciones.
+- soft delete de productos.
+- indices y reglas para evitar codigos duplicados por negocio.
 
 
 PASO 2: Crear tu usuario principal
@@ -283,18 +311,21 @@ Estas variables estan en Supabase:
 14. PRUEBA ANTES DE COMPARTIR
 
 1. Ejecutar multi_tenant.sql.
-2. Crear tu usuario principal en Supabase Auth.
-3. Agregarte a app_admins.
-4. Entrar a InvGuard.
-5. Crear un usuario cliente en Supabase Auth.
-6. Crear un negocio desde Admin.
-7. Asignar el correo del cliente.
-8. Entrar con el cliente.
-9. Crear productos y movimientos.
-10. Crear una entrada con lote y fecha de vencimiento.
-11. Revisar alertas en Dashboard, Inventario y Perdidas.
-12. Crear otro negocio con otro usuario.
-13. Verificar que cada negocio solo vea su propio inventario.
+2. Ejecutar lotes_vencimientos.sql.
+3. Ejecutar hardening.sql.
+4. Crear tu usuario principal en Supabase Auth.
+5. Agregarte a app_admins.
+6. Entrar a InvGuard.
+7. Crear un usuario cliente en Supabase Auth.
+8. Crear un negocio desde Clientes y accesos.
+9. Asignar el correo del cliente.
+10. Entrar con el cliente.
+11. Crear productos y movimientos.
+12. Crear una entrada con lote y fecha de vencimiento.
+13. Revisar alertas en Inicio, Inventario, Perdidas y Recomendaciones.
+14. Revisar ultimas acciones en Mi negocio / Clientes y accesos.
+15. Crear otro negocio con otro usuario.
+16. Verificar que cada negocio solo vea su propio inventario.
 
 
 15. QUE NO DEBES HACER

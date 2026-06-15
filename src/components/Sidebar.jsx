@@ -1,27 +1,28 @@
 import { useEffect, useState } from "react";
 import { NavLink } from "react-router-dom";
 import {
-  FiActivity,
-  FiCpu,
+  FiAlertTriangle,
+  FiBarChart2,
+  FiClipboard,
+  FiHome,
   FiLogOut,
   FiMapPin,
   FiPackage,
   FiRepeat,
   FiSettings,
-  FiTool,
-  FiTrendingDown,
 } from "react-icons/fi";
 
 import { supabase } from "../services/supabase";
 import { useTenant } from "../context/TenantContext";
+import { getTrialText } from "../utils/inventory";
 
 const requireAuth = import.meta.env.VITE_REQUIRE_AUTH !== "false";
 
 const items = [
   {
     to: "/",
-    label: "Dashboard",
-    icon: FiActivity,
+    label: "Inicio",
+    icon: FiHome,
   },
   {
     to: "/inventario",
@@ -30,27 +31,27 @@ const items = [
   },
   {
     to: "/movimientos",
-    label: "Movimientos",
+    label: "Entradas / salidas",
     icon: FiRepeat,
   },
   {
     to: "/perdidas",
     label: "Perdidas",
-    icon: FiTrendingDown,
+    icon: FiAlertTriangle,
   },
   {
     to: "/ia",
-    label: "Analisis",
-    icon: FiCpu,
+    label: "Recomendaciones",
+    icon: FiBarChart2,
   },
   {
     to: "/herramientas",
-    label: "Herramientas",
-    icon: FiTool,
+    label: "Reportes",
+    icon: FiClipboard,
   },
   {
     to: "/admin",
-    label: "Admin",
+    label: "Mi negocio",
     icon: FiSettings,
   },
 ];
@@ -58,24 +59,6 @@ const items = [
 export default function Sidebar() {
   const { empresa, isSuperAdmin } = useTenant();
   const [userEmail, setUserEmail] = useState("");
-  const [clock, setClock] = useState("");
-
-  useEffect(() => {
-    const tick = () => {
-      setClock(
-        new Intl.DateTimeFormat("es-PE", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        }).format(new Date())
-      );
-    };
-
-    tick();
-    const interval = window.setInterval(tick, 1000);
-
-    return () => window.clearInterval(interval);
-  }, []);
 
   useEffect(() => {
     if (!requireAuth) return undefined;
@@ -96,7 +79,15 @@ export default function Sidebar() {
   const visibleItems =
     !empresa && isSuperAdmin
       ? items.filter((item) => item.to === "/admin")
-      : items;
+      : items.map((item) =>
+          item.to === "/admin" && isSuperAdmin
+            ? { ...item, label: "Control" }
+            : item
+        );
+
+  const statusText = isSuperAdmin
+    ? "Control de clientes"
+    : getTrialText(empresa);
 
   return (
     <header className="sticky top-0 z-30 border-b border-white/10 bg-neutral-950/95 backdrop-blur">
@@ -121,9 +112,8 @@ export default function Sidebar() {
           <div className="flex flex-wrap items-center gap-3 text-xs text-neutral-400">
             <span className="inline-flex items-center gap-2 rounded-full border border-teal-400/25 bg-teal-400/10 px-3 py-1 text-teal-100">
               <span className="h-2 w-2 rounded-full bg-teal-300" />
-              {isSuperAdmin ? "Control maestro" : "Sincronizado"}
+              {statusText}
             </span>
-            <span>{clock}</span>
             {requireAuth && userEmail && (
               <span className="max-w-[180px] truncate">{userEmail}</span>
             )}

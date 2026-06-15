@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ArcElement,
   BarElement,
@@ -14,14 +15,19 @@ import {
 import { Bar, Doughnut, Line } from "react-chartjs-2";
 import {
   FiAlertTriangle,
+  FiArrowRight,
   FiBox,
   FiCalendar,
+  FiCheckCircle,
   FiDollarSign,
+  FiPlus,
   FiRefreshCw,
+  FiRepeat,
   FiTrendingDown,
 } from "react-icons/fi";
 
 import { useTenant } from "../context/TenantContext";
+import { fetchActiveProducts } from "../services/productQueries";
 import { supabase } from "../services/supabase";
 import {
   calculateStats,
@@ -34,6 +40,7 @@ import {
   getSupabaseMessage,
   money,
   numberFormat,
+  toNumber,
 } from "../utils/inventory";
 
 ChartJS.register(
@@ -101,6 +108,32 @@ function ChartCard({ title, badge, children }) {
   );
 }
 
+function ActionCard({ tone = "teal", title, body, to, action }) {
+  const tones = {
+    teal: "border-teal-400/25 bg-teal-400/10 text-teal-100",
+    amber: "border-amber-400/25 bg-amber-400/10 text-amber-100",
+    red: "border-red-400/25 bg-red-400/10 text-red-100",
+    sky: "border-sky-400/25 bg-sky-400/10 text-sky-100",
+    emerald: "border-emerald-400/25 bg-emerald-400/10 text-emerald-100",
+  };
+
+  return (
+    <Link
+      to={to}
+      className={`flex h-full flex-col justify-between rounded-lg border p-5 transition hover:bg-white/[0.04] ${tones[tone]}`}
+    >
+      <div>
+        <h3 className="font-semibold text-white">{title}</h3>
+        <p className="mt-2 text-sm leading-6 text-neutral-300">{body}</p>
+      </div>
+      <span className="mt-4 inline-flex items-center gap-2 text-sm font-semibold">
+        {action}
+        <FiArrowRight className="h-4 w-4" />
+      </span>
+    </Link>
+  );
+}
+
 export default function Dashboard() {
   const { empresaId } = useTenant();
   const [productos, setProductos] = useState([]);
@@ -110,26 +143,32 @@ export default function Dashboard() {
   const [error, setError] = useState("");
 
   async function cargarDashboard() {
+    if (!empresaId) {
+      setProductos([]);
+      setMovimientos([]);
+      setLotes([]);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     setError("");
 
     const [productosResult, movimientosResult, lotesResult] = await Promise.all([
-      supabase
-        .from("productos")
-        .select("*")
-        .eq("empresa_id", empresaId)
-        .order("nombre"),
+      fetchActiveProducts(empresaId),
       supabase
         .from("movimientos")
-        .select("*, productos(nombre, codigo, precio_compra, precio_venta)")
+        .select("id,empresa_id,producto_id,tipo,cantidad,observacion,created_at, productos(nombre, codigo, precio_compra, precio_venta)")
         .eq("empresa_id", empresaId)
-        .order("created_at", { ascending: false }),
+        .order("created_at", { ascending: false })
+        .limit(500),
       supabase
         .from("producto_lotes")
-        .select("*, productos(nombre, codigo, precio_compra, precio_venta)")
+        .select("id,empresa_id,producto_id,codigo_lote,proveedor,fecha_ingreso,fecha_vencimiento,cantidad_inicial,cantidad_actual,created_at, productos(nombre, codigo, precio_compra, precio_venta)")
         .eq("empresa_id", empresaId)
         .gt("cantidad_actual", 0)
-        .order("fecha_vencimiento", { ascending: true }),
+        .order("fecha_vencimiento", { ascending: true })
+        .limit(500),
     ]);
 
     if (productosResult.error || movimientosResult.error) {
@@ -150,7 +189,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     cargarDashboard();
-  }, []);
+  }, [empresaId]);
 
   const stats = useMemo(
     () => calculateStats(productos, movimientos),
@@ -177,6 +216,85 @@ export default function Dashboard() {
       }),
     [lotes]
   );
+
+  const lotesPorVencer7 = useMemo(
+    () =>
+      lotes.filter((lote) => {
+        const state = getExpiryState(lote);
+        return state.days !== null && state.days >= 0 && state.days <= 7;
+      }),
+    [lotes]
+  );
+
+  const dineroEnRiesgo = useMemo(
+    () =>
+      lotesEnRiesgo.reduce(
+        (total, lote) =>
+          total +
+          toNumber(lote.cantidad_actual) *
+            toNumber(
+              lote.productos?.precio_compra || lote.productos?.precio_venta
+            ),
+        0
+      ),
+    [lotesEnRiesgo]
+  );
+
+  const accionesHoy = useMemo(() => {
+    const acciones = [];
+
+    if (!loading && productos.length === 0) {
+      acciones.push({
+        tone: "teal",
+        title: "Agrega tu primer producto",
+        body: "Empieza con los productos que mas se mueven. Luego podras registrar entradas, salidas y vencimientos.",
+        to: "/inventario",
+        action: "Ir a inventario",
+      });
+    }
+
+    if (stats.stockBajo.length) {
+      acciones.push({
+        tone: "amber",
+        title: `${stats.stockBajo.length} productos necesitan reposicion`,
+        body: "Revisa el stock bajo antes de quedarte sin productos para vender o atender.",
+        to: "/inventario",
+        action: "Ver stock bajo",
+      });
+    }
+
+    if (lotesVencidos.length) {
+      acciones.push({
+        tone: "red",
+        title: `${lotesVencidos.length} lotes vencidos`,
+        body: "Confirma las perdidas por vencimiento para mantener el stock limpio y confiable.",
+        to: "/perdidas",
+        action: "Revisar perdidas",
+      });
+    }
+
+    if (lotesPorVencer7.length) {
+      acciones.push({
+        tone: "sky",
+        title: `${lotesPorVencer7.length} lotes vencen esta semana`,
+        body: "Prioriza su venta o revisa si corresponde separarlos antes de perder dinero.",
+        to: "/perdidas",
+        action: "Ver vencimientos",
+      });
+    }
+
+    if (!loading && productos.length > 0 && movimientos.length === 0) {
+      acciones.push({
+        tone: "emerald",
+        title: "Registra tu primer movimiento",
+        body: "Usa entradas para compras o salidas para ventas, consumos y ajustes.",
+        to: "/movimientos",
+        action: "Registrar ahora",
+      });
+    }
+
+    return acciones;
+  }, [loading, productos.length, movimientos.length, stats.stockBajo.length, lotesVencidos.length, lotesPorVencer7.length]);
 
   const categoryStats = useMemo(
     () => Array.from(groupByCategory(productos, movimientos).values()),
@@ -250,25 +368,42 @@ export default function Dashboard() {
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-sm font-medium text-teal-300">
-            Operacion en tiempo real
+            Lo importante de hoy
           </p>
           <h1 className="mt-1 text-3xl font-semibold">
-            Dashboard
+            Inicio
           </h1>
           <p className="mt-2 max-w-2xl text-sm text-neutral-400">
-            Inventario, stock critico, movimientos y valor operativo.
+            Revisa primero stock bajo, vencimientos y movimientos recientes.
+            Si algo necesita accion, aparecera aqui.
           </p>
         </div>
 
-        <button
-          type="button"
-          onClick={cargarDashboard}
-          disabled={loading}
-          className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
-        >
-          <FiRefreshCw className="h-4 w-4" />
-          Actualizar
-        </button>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            to="/movimientos"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-teal-500 px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-teal-400"
+          >
+            <FiRepeat className="h-4 w-4" />
+            Registrar movimiento
+          </Link>
+          <Link
+            to="/inventario"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
+          >
+            <FiPlus className="h-4 w-4" />
+            Agregar producto
+          </Link>
+          <button
+            type="button"
+            onClick={cargarDashboard}
+            disabled={loading}
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
+          >
+            <FiRefreshCw className="h-4 w-4" />
+            Actualizar
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -277,10 +412,48 @@ export default function Dashboard() {
         </div>
       )}
 
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-5">
+      <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold">Que hacer ahora</h2>
+            <p className="mt-1 text-sm text-neutral-400">
+              InvGuard ordena las alertas para que atiendas primero lo urgente.
+            </p>
+          </div>
+        </div>
+
+        {accionesHoy.length ? (
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            {accionesHoy.map((accion) => (
+              <ActionCard key={accion.title} {...accion} />
+            ))}
+          </div>
+        ) : (
+          <div className="mt-5 flex flex-col gap-3 rounded-lg border border-emerald-400/20 bg-emerald-400/10 p-4 text-emerald-50 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-start gap-3">
+              <FiCheckCircle className="mt-0.5 h-5 w-5 text-emerald-200" />
+              <div>
+                <p className="font-semibold">Todo se ve en orden</p>
+                <p className="mt-1 text-sm text-emerald-100/80">
+                  No hay stock bajo ni vencimientos urgentes con los datos actuales.
+                </p>
+              </div>
+            </div>
+            <Link
+              to="/movimientos"
+              className="inline-flex items-center justify-center gap-2 rounded-lg border border-emerald-200/30 px-3 py-2 text-sm font-semibold text-emerald-50 hover:bg-emerald-200/10"
+            >
+              Registrar movimiento
+              <FiArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-6">
         <Metric
           icon={FiBox}
-          label="Productos"
+          label="Productos registrados"
           value={loading ? "..." : numberFormat.format(stats.productos)}
         />
         <Metric
@@ -290,13 +463,13 @@ export default function Dashboard() {
         />
         <Metric
           icon={FiDollarSign}
-          label="Valor de inventario"
+          label="Valor para vender"
           value={loading ? "..." : money.format(stats.valorInventario)}
           tone="text-emerald-200"
         />
         <Metric
           icon={FiAlertTriangle}
-          label="Productos criticos"
+          label="Stock bajo"
           value={
             loading ? "..." : numberFormat.format(stats.stockBajo.length)
           }
@@ -304,14 +477,20 @@ export default function Dashboard() {
         />
         <Metric
           icon={FiCalendar}
-          label="Vencimientos"
+          label="Por vencer"
           value={loading ? "..." : numberFormat.format(lotesEnRiesgo.length)}
           tone={lotesVencidos.length ? "text-red-200" : "text-sky-200"}
+        />
+        <Metric
+          icon={FiTrendingDown}
+          label="Dinero en riesgo"
+          value={loading ? "..." : money.format(dineroEnRiesgo)}
+          tone={dineroEnRiesgo ? "text-red-200" : "text-white"}
         />
       </div>
 
       <div className="grid gap-4 xl:grid-cols-[1fr_1fr_0.8fr]">
-        <ChartCard title="Perdidas por categoria" badge="Mes actual">
+        <ChartCard title="Donde se pierde dinero" badge="Mes actual">
           <Doughnut
             data={perdidasChart}
             options={{
@@ -323,11 +502,11 @@ export default function Dashboard() {
           />
         </ChartCard>
 
-        <ChartCard title="Entradas y salidas" badge="Categorias">
+        <ChartCard title="Movimiento por categoria" badge="Categorias">
           <Bar data={movimientoChart} options={chartOptions} />
         </ChartCard>
 
-        <ChartCard title="Tendencia operativa" badge="Reciente">
+        <ChartCard title="Actividad reciente" badge="Reciente">
           <Line data={trendChart} options={chartOptions} />
         </ChartCard>
       </div>
@@ -335,7 +514,7 @@ export default function Dashboard() {
       <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
         <div className="rounded-lg border border-white/10 bg-neutral-900">
           <div className="border-b border-white/10 p-5">
-            <h2 className="text-lg font-semibold">Movimientos recientes</h2>
+            <h2 className="text-lg font-semibold">Ultimos movimientos</h2>
           </div>
 
           <div className="overflow-x-auto">
@@ -384,7 +563,7 @@ export default function Dashboard() {
                       colSpan="5"
                       className="px-5 py-8 text-center text-neutral-400"
                     >
-                      Aun no hay movimientos registrados.
+                      Todavia no hay movimientos. Registra una entrada o salida para empezar.
                     </td>
                   </tr>
                 )}
@@ -396,7 +575,7 @@ export default function Dashboard() {
         <div className="space-y-4">
           <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
             <div className="flex items-center justify-between gap-4">
-              <h2 className="text-lg font-semibold">Resumen financiero</h2>
+              <h2 className="text-lg font-semibold">Dinero en inventario</h2>
               <FiTrendingDown className="h-5 w-5 text-teal-300" />
             </div>
             <div className="mt-5 space-y-3 text-sm">
@@ -407,6 +586,12 @@ export default function Dashboard() {
               <div className="flex justify-between gap-4">
                 <span className="text-neutral-400">Valor venta</span>
                 <span>{money.format(stats.valorInventario)}</span>
+              </div>
+              <div className="flex justify-between gap-4">
+                <span className="text-neutral-400">Costo en riesgo</span>
+                <span className={dineroEnRiesgo ? "text-red-200" : ""}>
+                  {money.format(dineroEnRiesgo)}
+                </span>
               </div>
               <div className="flex justify-between gap-4 border-t border-white/10 pt-3">
                 <span className="text-neutral-400">Margen estimado</span>
@@ -419,7 +604,7 @@ export default function Dashboard() {
 
           <div className="rounded-lg border border-white/10 bg-neutral-900">
             <div className="border-b border-white/10 p-5">
-              <h2 className="text-lg font-semibold">Stock critico</h2>
+              <h2 className="text-lg font-semibold">Productos para reponer</h2>
             </div>
             <div className="divide-y divide-white/10">
               {stats.stockBajo.slice(0, 6).map((product) => {
@@ -447,7 +632,7 @@ export default function Dashboard() {
 
               {!loading && stats.stockBajo.length === 0 && (
                 <p className="p-5 text-sm text-neutral-400">
-                  No hay productos criticos.
+                  No hay productos con stock bajo.
                 </p>
               )}
             </div>
@@ -455,7 +640,7 @@ export default function Dashboard() {
 
           <div className="rounded-lg border border-white/10 bg-neutral-900">
             <div className="border-b border-white/10 p-5">
-              <h2 className="text-lg font-semibold">Vencimientos</h2>
+              <h2 className="text-lg font-semibold">Vencimientos cercanos</h2>
             </div>
             <div className="divide-y divide-white/10">
               {lotesEnRiesgo.slice(0, 6).map((lote) => {
@@ -486,7 +671,7 @@ export default function Dashboard() {
 
               {!loading && lotesEnRiesgo.length === 0 && (
                 <p className="p-5 text-sm text-neutral-400">
-                  No hay lotes por vencer en 30 dias.
+                  No hay lotes por vencer en los proximos 30 dias.
                 </p>
               )}
             </div>

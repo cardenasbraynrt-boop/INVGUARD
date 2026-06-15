@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   FiBriefcase,
   FiCalendar,
+  FiClock,
   FiPower,
   FiRefreshCw,
   FiSave,
@@ -11,12 +12,25 @@ import {
   FiUsers,
 } from "react-icons/fi";
 
+import EmptyState from "../components/EmptyState";
 import { useTenant } from "../context/TenantContext";
 import { supabase } from "../services/supabase";
 import { formatDate, getSupabaseMessage } from "../utils/inventory";
 
 const roles = ["ADMIN", "SUPERVISOR", "EMPLEADO"];
 const estados = ["BETA", "ACTIVO", "SUSPENDIDO"];
+
+const roleLabels = {
+  ADMIN: "Administrador",
+  SUPERVISOR: "Supervisor",
+  EMPLEADO: "Empleado",
+};
+
+const statusLabels = {
+  BETA: "Beta",
+  ACTIVO: "Activo",
+  SUSPENDIDO: "Suspendido",
+};
 
 function RoleBadge({ rol }) {
   const className =
@@ -28,7 +42,7 @@ function RoleBadge({ rol }) {
 
   return (
     <span className={`rounded-full border px-2.5 py-1 text-xs ${className}`}>
-      {rol}
+      {roleLabels[rol] || rol}
     </span>
   );
 }
@@ -43,7 +57,7 @@ function StatusBadge({ estado }) {
 
   return (
     <span className={`rounded-full border px-2.5 py-1 text-xs ${className}`}>
-      {estado || "BETA"}
+      {statusLabels[estado] || "Beta"}
     </span>
   );
 }
@@ -78,6 +92,7 @@ export default function Admin() {
   } = useTenant();
   const [members, setMembers] = useState([]);
   const [businesses, setBusinesses] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -124,9 +139,18 @@ export default function Admin() {
       ? supabase.rpc("listar_empresas_admin")
       : Promise.resolve({ data: [], error: null });
 
-    const [membersResult, businessesResult] = await Promise.all([
+    const auditPromise = empresaId || isSuperAdmin
+      ? supabase
+          .from("audit_logs")
+          .select("id,empresa_id,actor_email,accion,tabla,registro_id,created_at")
+          .order("created_at", { ascending: false })
+          .limit(12)
+      : Promise.resolve({ data: [], error: null });
+
+    const [membersResult, businessesResult, auditResult] = await Promise.all([
       membersPromise,
       businessesPromise,
+      auditPromise,
     ]);
 
     if (membersResult.error) {
@@ -143,6 +167,7 @@ export default function Admin() {
 
     setMembers(membersResult.data || []);
     setBusinesses(businessesResult.data || []);
+    setAuditLogs(auditResult.error ? [] : auditResult.data || []);
     setLoading(false);
   }
 
@@ -330,11 +355,15 @@ export default function Admin() {
       <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <p className="text-sm font-medium text-teal-300">
-            Control del sistema
+            Control de acceso
           </p>
-          <h1 className="mt-1 text-3xl font-semibold">Admin</h1>
+          <h1 className="mt-1 text-3xl font-semibold">
+            {isSuperAdmin ? "Clientes y accesos" : "Mi negocio"}
+          </h1>
           <p className="mt-2 text-sm text-neutral-400">
-            Accesos, negocios, roles y estado comercial.
+            {isSuperAdmin
+              ? "Crea negocios, asigna usuarios y decide quien sigue en beta, activo o suspendido."
+              : "Actualiza los datos del negocio y revisa quienes tienen acceso."}
           </p>
         </div>
 
@@ -387,53 +416,78 @@ export default function Admin() {
 
           <div className="grid gap-4 xl:grid-cols-[0.85fr_1.15fr]">
             <div className="rounded-lg border border-white/10 bg-neutral-900 p-5">
-              <h2 className="text-lg font-semibold">Crear negocio</h2>
+              <h2 className="text-lg font-semibold">Crear cliente en beta</h2>
+              <p className="mt-2 text-sm leading-6 text-neutral-400">
+                Primero crea el usuario en Supabase Auth con correo y
+                contrasena. Luego escribe aqui ese mismo correo para asignarlo
+                como dueno del negocio.
+              </p>
               <div className="mt-5 grid gap-3">
-                <input
-                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
-                  placeholder="Nombre del negocio"
-                  value={newBusinessForm.nombre}
-                  onChange={(event) =>
-                    setNewBusinessForm((current) => ({
-                      ...current,
-                      nombre: event.target.value,
-                    }))
-                  }
-                />
-                <input
-                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
-                  placeholder="Rubro"
-                  value={newBusinessForm.rubro}
-                  onChange={(event) =>
-                    setNewBusinessForm((current) => ({
-                      ...current,
-                      rubro: event.target.value,
-                    }))
-                  }
-                />
-                <input
-                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
-                  placeholder="Ciudad"
-                  value={newBusinessForm.ciudad}
-                  onChange={(event) =>
-                    setNewBusinessForm((current) => ({
-                      ...current,
-                      ciudad: event.target.value,
-                    }))
-                  }
-                />
-                <input
-                  className="rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
-                  placeholder="Correo del dueno"
-                  type="email"
-                  value={newBusinessForm.ownerEmail}
-                  onChange={(event) =>
-                    setNewBusinessForm((current) => ({
-                      ...current,
-                      ownerEmail: event.target.value,
-                    }))
-                  }
-                />
+                <label className="block">
+                  <span className="mb-1 block text-sm text-neutral-300">
+                    Nombre del negocio
+                  </span>
+                  <input
+                    className="w-full rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                    placeholder="Ej. Bodega San Jose"
+                    value={newBusinessForm.nombre}
+                    onChange={(event) =>
+                      setNewBusinessForm((current) => ({
+                        ...current,
+                        nombre: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm text-neutral-300">
+                    Rubro
+                  </span>
+                  <input
+                    className="w-full rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                    placeholder="Ej. Abarrotes, farmacia, ferreteria"
+                    value={newBusinessForm.rubro}
+                    onChange={(event) =>
+                      setNewBusinessForm((current) => ({
+                        ...current,
+                        rubro: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm text-neutral-300">
+                    Ciudad
+                  </span>
+                  <input
+                    className="w-full rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                    placeholder="Ej. Lima"
+                    value={newBusinessForm.ciudad}
+                    onChange={(event) =>
+                      setNewBusinessForm((current) => ({
+                        ...current,
+                        ciudad: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-sm text-neutral-300">
+                    Correo del dueno
+                  </span>
+                  <input
+                    className="w-full rounded-lg border border-white/10 bg-neutral-950 px-3 py-2 text-sm"
+                    placeholder="dueno@negocio.com"
+                    type="email"
+                    value={newBusinessForm.ownerEmail}
+                    onChange={(event) =>
+                      setNewBusinessForm((current) => ({
+                        ...current,
+                        ownerEmail: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
                 <button
                   type="button"
                   onClick={crearNegocio}
@@ -518,7 +572,7 @@ export default function Admin() {
                             >
                               {estados.map((estado) => (
                                 <option key={estado} value={estado}>
-                                  {estado}
+                                  {statusLabels[estado]}
                                 </option>
                               ))}
                             </select>
@@ -531,9 +585,13 @@ export default function Admin() {
                       <tr>
                         <td
                           colSpan="6"
-                          className="px-5 py-8 text-center text-neutral-400"
+                          className="px-0 py-0"
                         >
-                          Aun no hay negocios registrados.
+                          <EmptyState
+                            icon={FiBriefcase}
+                            title="Aun no hay clientes creados"
+                            body="Crea el primer negocio en beta para empezar a controlar usuarios y accesos."
+                          />
                         </td>
                       </tr>
                     )}
@@ -669,7 +727,7 @@ export default function Admin() {
                 >
                   {roles.map((rol) => (
                     <option key={rol} value={rol}>
-                      {rol}
+                      {roleLabels[rol]}
                     </option>
                   ))}
                 </select>
@@ -720,7 +778,7 @@ export default function Admin() {
                           >
                             {roles.map((rol) => (
                               <option key={rol} value={rol}>
-                                {rol}
+                                {roleLabels[rol]}
                               </option>
                             ))}
                           </select>
@@ -749,14 +807,49 @@ export default function Admin() {
                     <tr>
                       <td
                         colSpan="4"
-                        className="px-5 py-8 text-center text-neutral-400"
+                        className="px-0 py-0"
                       >
-                        Aun no hay usuarios asignados.
+                        <EmptyState
+                          icon={FiUsers}
+                          title="Aun no hay usuarios asignados"
+                          body="Agrega un correo para que esa persona pueda entrar al negocio."
+                        />
                       </td>
                     </tr>
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <div className="rounded-lg border border-white/10 bg-neutral-900">
+            <div className="flex items-center justify-between gap-4 border-b border-white/10 p-5">
+              <h2 className="text-lg font-semibold">Ultimas acciones</h2>
+              <FiClock className="h-5 w-5 text-teal-300" />
+            </div>
+            <div className="divide-y divide-white/10">
+              {auditLogs.map((log) => (
+                <div key={log.id} className="grid gap-2 p-4 text-sm md:grid-cols-[1fr_120px_160px] md:items-center">
+                  <div>
+                    <p className="font-medium">
+                      {log.tabla} / {log.accion}
+                    </p>
+                    <p className="text-xs text-neutral-500">
+                      {log.actor_email || "Usuario"} - registro {log.registro_id || "-"}
+                    </p>
+                  </div>
+                  <span className="text-neutral-400">{log.empresa_id ? `Negocio ${log.empresa_id}` : "-"}</span>
+                  <span className="text-neutral-400">{formatDate(log.created_at)}</span>
+                </div>
+              ))}
+
+              {!loading && auditLogs.length === 0 && (
+                <EmptyState
+                  icon={FiClock}
+                  title="Aun no hay acciones registradas"
+                  body="Despues de ejecutar supabase/hardening.sql, aqui veras cambios de productos, movimientos, lotes y usuarios."
+                />
+              )}
             </div>
           </div>
         </>

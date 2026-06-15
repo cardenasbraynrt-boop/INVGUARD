@@ -1,5 +1,4 @@
 import { supabase } from "./supabase";
-import { toNumber } from "../utils/inventory";
 
 function isMissingRpc(error) {
   return (
@@ -85,71 +84,12 @@ export async function registrarMovimientoInventario({
     };
   }
 
-  const { data: producto, error: productoError } = await supabase
-    .from("productos")
-    .select("*")
-    .eq("empresa_id", empresaId)
-    .eq("id", productoId)
-    .single();
-
-  if (productoError || !producto) {
-    return {
-      data: null,
-      error:
-        productoError ||
-        new Error("No se pudo encontrar el producto."),
-      mode: "fallback",
-    };
-  }
-
-  let nuevoStock = toNumber(producto.stock);
-
-  if (tipo === "ENTRADA") {
-    nuevoStock += cantidad;
-  }
-
-  if (tipo === "SALIDA") {
-    nuevoStock -= cantidad;
-  }
-
-  if (nuevoStock < 0) {
-    return {
-      data: null,
-      error: new Error("Stock insuficiente."),
-      mode: "fallback",
-    };
-  }
-
-  const { error: movimientoError } = await supabase
-    .from("movimientos")
-    .insert([
-      {
-        empresa_id: empresaId,
-        producto_id: productoId,
-        tipo,
-        cantidad,
-        observacion,
-      },
-    ]);
-
-  if (movimientoError) {
-    return {
-      data: null,
-      error: movimientoError,
-      mode: "fallback",
-    };
-  }
-
-  const { error: stockError } = await supabase
-    .from("productos")
-    .update({ stock: nuevoStock })
-    .eq("empresa_id", empresaId)
-    .eq("id", productoId);
-
   return {
-    data: stockError ? null : { stock_actual: nuevoStock },
-    error: stockError,
-    mode: "fallback",
+    data: null,
+    error: new Error(
+      "Falta activar las funciones seguras de inventario. Ejecuta supabase/multi_tenant.sql y supabase/lotes_vencimientos.sql."
+    ),
+    mode: "rpc",
   };
 }
 

@@ -11,17 +11,22 @@ InvGuard es una aplicacion web multiusuario para inventario, movimientos, perdid
 - Super Admin para crear negocios, asignar duenos y controlar estado comercial.
 - Beta comercial de 30 dias por negocio.
 - Estados de negocio: `BETA`, `ACTIVO`, `SUSPENDIDO`.
-- Dashboard con KPIs y graficos.
-- Inventario con CRUD, filtros, stock minimo, costo, venta y CSV.
+- Inicio con prioridades del dia, alertas y acciones directas.
+- Inicio muestra dinero en riesgo por vencimientos cercanos.
+- Inventario con productos, filtros, stock minimo, costo, venta, lotes y CSV.
+- Codigo automatico para productos nuevos.
+- Categorias guiadas para evitar duplicados por errores de escritura.
+- Filtros rapidos en Inventario: sin stock, stock bajo, por vencer, vencidos y sin lote.
 - Lotes por producto con proveedor y fecha de vencimiento.
 - Alertas de vencimiento en inventario, dashboard y perdidas.
 - Salidas por FEFO: consume primero los lotes que vencen antes.
 - Perdidas sugeridas por vencimiento, siempre con confirmacion.
-- Movimientos con entradas, salidas y actualizacion de stock.
+- Entradas / salidas con actualizacion automatica de stock.
+- Validacion antes de descontar stock para evitar salidas o perdidas mayores al stock disponible.
 - Perdidas como salidas controladas.
-- Analisis inteligente con reorden sugerido y riesgo por categoria.
-- Herramientas: pedido por WhatsApp, respaldo JSON, reporte CSV, impresion e importacion CSV.
-- Panel Admin para controlar datos del negocio, usuarios y roles.
+- Recomendaciones con reorden sugerido, riesgo por categoria y vencimientos.
+- Reportes: pedido por WhatsApp, respaldo JSON, reporte CSV, impresion e importacion CSV.
+- Panel Mi negocio / Clientes y accesos para controlar datos, usuarios y roles.
 - Configuracion lista para Vercel.
 
 ## Ejecutar localmente
@@ -62,6 +67,12 @@ Luego ejecuta el modulo de lotes y vencimientos:
 supabase/lotes_vencimientos.sql
 ```
 
+Finalmente ejecuta el endurecimiento profesional:
+
+```text
+supabase/hardening.sql
+```
+
 Ese script crea:
 
 - `app_admins`
@@ -71,11 +82,17 @@ Ese script crea:
 - `productos`
 - `movimientos`
 - `producto_lotes`
+- `categorias`
+- `audit_logs`
 - policies RLS
 - funciones Super Admin
 - funcion segura `registrar_movimiento`
 - funcion FEFO `registrar_movimiento_lote`
 - funcion `registrar_perdida_lote`
+- soft delete de productos con `soft_delete_producto`
+- auditoria de productos, movimientos, lotes, usuarios y categorias
+- indices para busqueda, vencimientos y consultas grandes
+- unicidad de codigo por negocio para productos activos
 - funciones para agregar, cambiar rol y quitar usuarios por correo
 
 Despues de ejecutar el SQL, agrega tu cuenta como Super Admin:
@@ -102,7 +119,7 @@ Sin ese SQL, la app mostrara una pantalla indicando que falta activar la base mu
 
 ## Importar inventario
 
-La pantalla Herramientas permite importar CSV con estas columnas:
+La pantalla Reportes permite importar CSV con estas columnas. `codigo` puede venir vacio; InvGuard lo genera automatico:
 
 ```text
 codigo,nombre,categoria,stock,stock_minimo,precio_compra,precio_venta
@@ -116,7 +133,7 @@ Al crear un producto puedes agregar lote inicial:
 - proveedor,
 - fecha de vencimiento.
 
-En Movimientos, cuando registres una entrada, tambien puedes agregar lote, proveedor y vencimiento. Cuando registres una salida, InvGuard descuenta primero los lotes que vencen antes.
+En Entradas / salidas, cuando registres una entrada, tambien puedes agregar lote, proveedor y vencimiento. Cuando registres una salida, InvGuard descuenta primero los lotes que vencen antes.
 
 En Perdidas, InvGuard muestra lotes vencidos como perdidas sugeridas. La perdida se descuenta solo cuando un usuario la confirma.
 
@@ -136,7 +153,7 @@ InvGuard sirve para cualquier persona o negocio que maneje inventario: bodegas, 
 
 Tu cuenta Super Admin controla todos los negocios.
 
-Desde Admin puedes:
+Desde Clientes y accesos puedes:
 
 - crear negocios con beta de 30 dias,
 - asignar dueno por correo,
