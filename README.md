@@ -24,6 +24,7 @@ InvGuard es una aplicacion web multiusuario para inventario, movimientos, perdid
 - Entradas / salidas con actualizacion automatica de stock.
 - Validacion antes de descontar stock para evitar salidas o perdidas mayores al stock disponible.
 - Perdidas como salidas controladas.
+- Proveedores, cuentas por pagar, pagos parciales y alertas de vencimiento.
 - Recomendaciones con reorden sugerido, riesgo por categoria y vencimientos.
 - Reportes: pedido por WhatsApp, respaldo JSON, reporte CSV, impresion e importacion CSV.
 - Panel Mi negocio / Clientes y accesos para controlar datos, usuarios y roles.
@@ -73,6 +74,12 @@ Finalmente ejecuta el endurecimiento profesional:
 supabase/hardening.sql
 ```
 
+Activa proveedores y pagos:
+
+```text
+supabase/proveedores_pagos.sql
+```
+
 Ese script crea:
 
 - `app_admins`
@@ -84,6 +91,9 @@ Ese script crea:
 - `producto_lotes`
 - `categorias`
 - `audit_logs`
+- `proveedores`
+- `cuentas_por_pagar`
+- `pagos_proveedor`
 - policies RLS
 - funciones Super Admin
 - funcion segura `registrar_movimiento`
@@ -93,6 +103,7 @@ Ese script crea:
 - auditoria de productos, movimientos, lotes, usuarios y categorias
 - indices para busqueda, vencimientos y consultas grandes
 - unicidad de codigo por negocio para productos activos
+- pagos parciales transaccionales y saldos por proveedor
 - funciones para agregar, cambiar rol y quitar usuarios por correo
 
 Despues de ejecutar el SQL, agrega tu cuenta como Super Admin:
@@ -136,6 +147,19 @@ Al crear un producto puedes agregar lote inicial:
 En Entradas / salidas, cuando registres una entrada, tambien puedes agregar lote, proveedor y vencimiento. Cuando registres una salida, InvGuard descuenta primero los lotes que vencen antes.
 
 En Perdidas, InvGuard muestra lotes vencidos como perdidas sugeridas. La perdida se descuenta solo cuando un usuario la confirma.
+
+## Pagos a proveedores
+
+La pantalla Por pagar permite:
+
+- registrar proveedores,
+- guardar facturas o compromisos pendientes,
+- definir fecha limite y aviso anticipado,
+- registrar abonos parciales o pagos completos,
+- conservar medio y referencia del pago,
+- revisar vencidos y proximos desde Inicio.
+
+El saldo solo cambia mediante la funcion segura `registrar_pago_proveedor`.
 
 ## Publicar en Vercel
 

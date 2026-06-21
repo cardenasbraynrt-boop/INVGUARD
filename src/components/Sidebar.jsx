@@ -4,6 +4,7 @@ import {
   FiAlertTriangle,
   FiBarChart2,
   FiClipboard,
+  FiCreditCard,
   FiHome,
   FiLogOut,
   FiMapPin,
@@ -33,6 +34,11 @@ const items = [
     to: "/movimientos",
     label: "Entradas / salidas",
     icon: FiRepeat,
+  },
+  {
+    to: "/cuentas-pagar",
+    label: "Por pagar",
+    icon: FiCreditCard,
   },
   {
     to: "/perdidas",
