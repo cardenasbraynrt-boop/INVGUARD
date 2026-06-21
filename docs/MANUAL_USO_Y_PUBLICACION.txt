@@ -228,6 +228,10 @@ Finalmente ejecutar:
 
 C:\Users\Alexander\Documents\invguard\supabase\hardening.sql
 
+Finalmente ejecutar:
+
+C:\Users\Alexander\Documents\invguard\supabase\proveedores_pagos.sql
+
 Ese archivo crea:
 - app_admins.
 - empresas.
@@ -238,6 +242,9 @@ Ese archivo crea:
 - producto_lotes.
 - categorias.
 - audit_logs.
+- proveedores.
+- cuentas_por_pagar.
+- pagos_proveedor.
 - seguridad RLS.
 - funciones Super Admin.
 - funciones para movimientos y usuarios.

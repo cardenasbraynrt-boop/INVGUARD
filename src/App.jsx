@@ -8,6 +8,7 @@ import { supabase } from "./services/supabase";
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const Admin = lazy(() => import("./pages/Admin"));
+const CuentasPagar = lazy(() => import("./pages/CuentasPagar"));
 const Herramientas = lazy(() => import("./pages/Herramientas"));
 const IA = lazy(() => import("./pages/IA"));
 const Inventario = lazy(() => import("./pages/Inventario"));
@@ -155,6 +156,7 @@ function AppRoutes() {
       <Route path="/" element={<Dashboard />} />
       <Route path="/inventario" element={<Inventario />} />
       <Route path="/movimientos" element={<Movimientos />} />
+      <Route path="/cuentas-pagar" element={<CuentasPagar />} />
       <Route path="/perdidas" element={<Perdidas />} />
       <Route path="/ia" element={<IA />} />
       <Route path="/herramientas" element={<Herramientas />} />

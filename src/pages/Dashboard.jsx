@@ -19,6 +19,7 @@ import {
   FiBox,
   FiCalendar,
   FiCheckCircle,
+  FiCreditCard,
   FiDollarSign,
   FiPlus,
   FiRefreshCw,
@@ -42,6 +43,7 @@ import {
   numberFormat,
   toNumber,
 } from "../utils/inventory";
+import { getPayableState, summarizePayables } from "../utils/payables";
 
 ChartJS.register(
   ArcElement,
@@ -139,6 +141,7 @@ export default function Dashboard() {
   const [productos, setProductos] = useState([]);
   const [movimientos, setMovimientos] = useState([]);
   const [lotes, setLotes] = useState([]);
+  const [payables, setPayables] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -147,6 +150,7 @@ export default function Dashboard() {
       setProductos([]);
       setMovimientos([]);
       setLotes([]);
+      setPayables([]);
       setLoading(false);
       return;
     }
@@ -154,7 +158,7 @@ export default function Dashboard() {
     setLoading(true);
     setError("");
 
-    const [productosResult, movimientosResult, lotesResult] = await Promise.all([
+    const [productosResult, movimientosResult, lotesResult, payablesResult] = await Promise.all([
       fetchActiveProducts(empresaId),
       supabase
         .from("movimientos")
@@ -169,6 +173,13 @@ export default function Dashboard() {
         .gt("cantidad_actual", 0)
         .order("fecha_vencimiento", { ascending: true })
         .limit(500),
+      supabase
+        .from("cuentas_por_pagar")
+        .select("id,proveedor_id,concepto,fecha_vencimiento,total,saldo,estado,recordatorio_dias, proveedor:proveedores(id,nombre)")
+        .eq("empresa_id", empresaId)
+        .in("estado", ["PENDIENTE", "PARCIAL"])
+        .order("fecha_vencimiento", { ascending: true })
+        .limit(100),
     ]);
 
     if (productosResult.error || movimientosResult.error) {
@@ -184,6 +195,7 @@ export default function Dashboard() {
     setProductos(productosResult.data || []);
     setMovimientos(movimientosResult.data || []);
     setLotes(lotesResult.error ? [] : lotesResult.data || []);
+    setPayables(payablesResult.error ? [] : payablesResult.data || []);
     setLoading(false);
   }
 
@@ -240,8 +252,33 @@ export default function Dashboard() {
     [lotesEnRiesgo]
   );
 
+  const payableSummary = useMemo(
+    () => summarizePayables(payables),
+    [payables]
+  );
+
+  const nextPayable = payables[0];
+
   const accionesHoy = useMemo(() => {
     const acciones = [];
+
+    if (payableSummary.overdueCount) {
+      acciones.push({
+        tone: "red",
+        title: `${payableSummary.overdueCount} pagos a proveedores vencidos`,
+        body: `Hay ${money.format(payableSummary.overdue)} pendientes fuera de fecha.`,
+        to: "/cuentas-pagar",
+        action: "Revisar pagos",
+      });
+    } else if (payableSummary.dueSoonCount) {
+      acciones.push({
+        tone: "sky",
+        title: `${payableSummary.dueSoonCount} pagos proximos`,
+        body: `Prepara ${money.format(payableSummary.dueSoon)} para pagar a tiempo.`,
+        to: "/cuentas-pagar",
+        action: "Ver vencimientos",
+      });
+    }
 
     if (!loading && productos.length === 0) {
       acciones.push({
@@ -294,7 +331,7 @@ export default function Dashboard() {
     }
 
     return acciones;
-  }, [loading, productos.length, movimientos.length, stats.stockBajo.length, lotesVencidos.length, lotesPorVencer7.length]);
+  }, [loading, productos.length, movimientos.length, stats.stockBajo.length, lotesVencidos.length, lotesPorVencer7.length, payableSummary]);
 
   const categoryStats = useMemo(
     () => Array.from(groupByCategory(productos, movimientos).values()),
@@ -394,6 +431,13 @@ export default function Dashboard() {
             <FiPlus className="h-4 w-4" />
             Agregar producto
           </Link>
+          <Link
+            to="/cuentas-pagar"
+            className="inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm font-medium text-white hover:bg-white/10"
+          >
+            <FiCreditCard className="h-4 w-4" />
+            Ver pagos
+          </Link>
           <button
             type="button"
             onClick={cargarDashboard}
@@ -409,6 +453,35 @@ export default function Dashboard() {
       {error && (
         <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-100">
           {error}
+        </div>
+      )}
+
+      {payables.length > 0 && (
+        <div className={`flex flex-col gap-4 rounded-lg border p-5 md:flex-row md:items-center md:justify-between ${
+          payableSummary.overdueCount
+            ? "border-red-400/30 bg-red-400/10"
+            : "border-sky-400/25 bg-sky-400/10"
+        }`}>
+          <div className="flex items-start gap-3">
+            <FiCreditCard className={`mt-0.5 h-5 w-5 shrink-0 ${payableSummary.overdueCount ? "text-red-200" : "text-sky-200"}`} />
+            <div>
+              <p className="font-semibold">
+                {payableSummary.overdueCount ? "Tienes pagos vencidos" : "Proximo pago a proveedor"}
+              </p>
+              <p className="mt-1 text-sm text-neutral-300">
+                {nextPayable?.proveedor?.nombre || "Proveedor"}: {money.format(toNumber(nextPayable?.saldo))} / {getPayableState(nextPayable).label}.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="text-left md:text-right">
+              <p className="text-xs text-neutral-400">Total pendiente</p>
+              <p className="font-semibold">{money.format(payableSummary.pending)}</p>
+            </div>
+            <Link to="/cuentas-pagar" className="rounded-lg bg-white px-4 py-2 text-sm font-semibold text-neutral-950 hover:bg-neutral-200">
+              Ir a pagos
+            </Link>
+          </div>
         </div>
       )}
 
